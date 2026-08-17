@@ -1,5 +1,12 @@
 # LLM Evaluation Platform
 
+Minimal end-to-end evaluation flow using FastAPI, React, and a local Ollama
+model. Install and start Ollama separately, then make the model available:
+
+```bash
+ollama run gemma4:e4b
+```
+
 ## Develop
 
 Run in two terminals:
@@ -15,6 +22,13 @@ npm run dev
 # Backend — http://localhost:8000
 uv sync
 uv run fastapi dev backend/app/main.py
+```
+
+The backend defaults to `http://localhost:11434` and `gemma4:e4b`. Override
+either value when needed:
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434 OLLAMA_MODEL=gemma4:e4b uv run fastapi dev backend/app/main.py
 ```
 
 ## Build locally
@@ -33,5 +47,9 @@ Open <http://localhost:8000>.
 ```bash
 docker compose up --build
 ```
+
+Docker Compose defaults `OLLAMA_BASE_URL` to
+`http://host.docker.internal:11434` so the container can reach Ollama on the
+host. Set the environment variable before starting Compose to use another URL.
 
 Open <http://localhost:8000>.

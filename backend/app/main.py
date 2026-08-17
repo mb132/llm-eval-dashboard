@@ -6,7 +6,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .api.evaluations import router as evaluations_router
+
 app = FastAPI(title="LLM Evaluation Platform")
+app.include_router(evaluations_router)
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 ASSETS_DIR = FRONTEND_DIST / "assets"

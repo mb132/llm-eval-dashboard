@@ -5,6 +5,7 @@ description = "Minimal full-stack foundation for the LLM Evaluation Platform"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.116.0",
+    "httpx>=0.28.1",
     "uvicorn>=0.35.0",
 ]
 
