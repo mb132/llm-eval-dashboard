@@ -4,8 +4,11 @@ version = "0.1.0"
 description = "Minimal full-stack foundation for the LLM Evaluation Platform"
 requires-python = ">=3.13"
 dependencies = [
+    "aiosqlite>=0.21.0",
+    "alembic>=1.16.0",
     "fastapi>=0.116.0",
     "httpx>=0.28.1",
+    "sqlalchemy>=2.0.41",
     "uvicorn>=0.35.0",
 ]
 

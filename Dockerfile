@@ -20,8 +20,11 @@ COPY --from=uv /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-editable
 
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
 COPY backend/ ./backend/
+COPY docker/entrypoint.sh ./docker/entrypoint.sh
 COPY --from=frontend-build /app/frontend/dist/ ./frontend/dist/
 
 EXPOSE 8000
-CMD ["uv", "run", "--no-sync", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "docker/entrypoint.sh"]
