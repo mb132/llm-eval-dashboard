@@ -1,13 +1,15 @@
-"""Evaluation configuration and legacy local execution endpoints."""
+"""Evaluation configuration, execution, progress, and result endpoints."""
 
+from datetime import datetime
 from typing import Annotated, NoReturn, Self
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ..database import get_session
+from ..database import get_session, get_session_factory
+from ..models import EvaluationResult, EvaluationRun
 from ..services.evaluation_configuration import (
     MAX_REPETITIONS,
     MAX_SELECTED_MODELS,
@@ -21,28 +23,24 @@ from ..services.evaluation_configuration import (
     get_evaluation_options,
     preview_evaluation_configuration,
 )
-from ..services.ollama import OllamaError, run_evaluation
+from ..services.evaluation_execution import (
+    DEFAULT_RESULT_PAGE_SIZE,
+    MAX_RESULT_PAGE_SIZE,
+    EvaluationRunNotFoundError,
+    ResultPage,
+    create_evaluation_run,
+    execute_evaluation_run,
+    get_evaluation_run,
+    list_evaluation_results,
+)
 
 router = APIRouter(prefix="/api/evaluations", tags=["evaluations"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_session)]
+EvaluationSessionFactory = Annotated[
+    async_sessionmaker[AsyncSession], Depends(get_session_factory)
+]
 EvaluationModels = Annotated[list[ModelOption], Depends(get_evaluation_model_options)]
 ModelId = Annotated[str, Field(min_length=1, max_length=100)]
-
-TEST_QUESTION = "What is the capital of France?"
-EVALUATION_PROMPT = (
-    "Answer the following question accurately and concisely. "
-    "Return only the answer, without additional explanation."
-)
-
-
-class EvaluationResponse(BaseModel):
-    """Normalized result returned to the frontend."""
-
-    model: str
-    response: str
-    latency_ms: int
-    input_tokens: int | None
-    output_tokens: int | None
 
 
 class StrictRequest(BaseModel):
@@ -52,7 +50,7 @@ class StrictRequest(BaseModel):
 
 
 class EvaluationConfigurationRequest(StrictRequest):
-    """Selections that define a future evaluation run."""
+    """Selections that define an evaluation run."""
 
     model_ids: list[ModelId] = Field(
         min_length=1,
@@ -63,8 +61,8 @@ class EvaluationConfigurationRequest(StrictRequest):
         max_length=MAX_SELECTED_PROMPT_VERSIONS,
     )
     dataset_id: UUID
-    # Repetitions are provider-independent. Temperature and token overrides need
-    # model capabilities from F01 before they can be offered safely.
+    # Provider-independent today. Model-specific controls require F01 capability
+    # metadata before they can be exposed safely.
     repetitions: int = Field(default=1, ge=1, le=MAX_REPETITIONS)
 
     @model_validator(mode="after")
@@ -125,33 +123,85 @@ class EvaluationPreviewResponse(BaseModel):
     total_requests: int
 
 
+class EvaluationRunResponse(BaseModel):
+    """Persistent run status and progress counters."""
+
+    id: UUID
+    status: str
+    dataset_id: UUID
+    dataset_name: str
+    repetitions: int
+    total_requests: int
+    completed_requests: int
+    successful_requests: int
+    failed_requests: int
+    failure_message: str | None
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+class EvaluationResultResponse(BaseModel):
+    """One stored request snapshot and its current outcome."""
+
+    id: UUID
+    sequence_number: int
+    status: str
+    model_id: str
+    model_provider: str
+    model_name: str
+    reported_model_name: str | None
+    prompt_id: UUID
+    prompt_version_id: UUID
+    prompt_name: str
+    prompt_version_number: int
+    test_case_id: UUID
+    repetition: int
+    max_output_tokens: int
+    test_input: str
+    expected_output: str
+    generated_output: str | None
+    error_code: str | None
+    error_message: str | None
+    latency_ms: int | None
+    input_tokens: int | None
+    output_tokens: int | None
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+class EvaluationResultPageResponse(BaseModel):
+    """Bounded result page for progress polling and later inspection."""
+
+    items: list[EvaluationResultResponse]
+    total: int
+    offset: int
+    limit: int
+
+
 def _options_response(options: EvaluationOptions) -> EvaluationOptionsResponse:
     return EvaluationOptionsResponse(
         models=[
-            ModelOptionResponse(
-                id=model.id,
-                provider=model.provider,
-                name=model.name,
-            )
-            for model in options.models
+            ModelOptionResponse(id=item.id, provider=item.provider, name=item.name)
+            for item in options.models
         ],
         prompt_versions=[
             PromptVersionOptionResponse(
-                id=version.id,
-                prompt_id=version.prompt_id,
-                prompt_name=version.prompt_name,
-                version_number=version.version_number,
-                content_preview=version.content_preview,
+                id=item.id,
+                prompt_id=item.prompt_id,
+                prompt_name=item.prompt_name,
+                version_number=item.version_number,
+                content_preview=item.content_preview,
             )
-            for version in options.prompt_versions
+            for item in options.prompt_versions
         ],
         datasets=[
             DatasetOptionResponse(
-                id=dataset.id,
-                name=dataset.name,
-                test_case_count=dataset.test_case_count,
+                id=item.id,
+                name=item.name,
+                test_case_count=item.test_case_count,
             )
-            for dataset in options.datasets
+            for item in options.datasets
         ],
     )
 
@@ -170,8 +220,64 @@ def _preview_response(preview: EvaluationPreview) -> EvaluationPreviewResponse:
     )
 
 
-def _raise_configuration_error(exc: Exception) -> NoReturn:
-    if isinstance(exc, EvaluationDatasetNotFoundError):
+def _run_response(evaluation: EvaluationRun) -> EvaluationRunResponse:
+    return EvaluationRunResponse(
+        id=evaluation.id,
+        status=evaluation.status,
+        dataset_id=evaluation.dataset_id,
+        dataset_name=evaluation.dataset_name,
+        repetitions=evaluation.repetitions,
+        total_requests=evaluation.total_requests,
+        completed_requests=evaluation.completed_requests,
+        successful_requests=evaluation.successful_requests,
+        failed_requests=evaluation.failed_requests,
+        failure_message=evaluation.failure_message,
+        created_at=evaluation.created_at,
+        started_at=evaluation.started_at,
+        completed_at=evaluation.completed_at,
+    )
+
+
+def _result_response(result: EvaluationResult) -> EvaluationResultResponse:
+    return EvaluationResultResponse(
+        id=result.id,
+        sequence_number=result.sequence_number,
+        status=result.status,
+        model_id=result.model_id,
+        model_provider=result.model_provider,
+        model_name=result.model_name,
+        reported_model_name=result.reported_model_name,
+        prompt_id=result.prompt_id,
+        prompt_version_id=result.prompt_version_id,
+        prompt_name=result.prompt_name,
+        prompt_version_number=result.prompt_version_number,
+        test_case_id=result.test_case_id,
+        repetition=result.repetition,
+        max_output_tokens=result.max_output_tokens,
+        test_input=result.test_input,
+        expected_output=result.expected_output,
+        generated_output=result.generated_output,
+        error_code=result.error_code,
+        error_message=result.error_message,
+        latency_ms=result.latency_ms,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        started_at=result.started_at,
+        completed_at=result.completed_at,
+    )
+
+
+def _result_page_response(page: ResultPage) -> EvaluationResultPageResponse:
+    return EvaluationResultPageResponse(
+        items=[_result_response(item) for item in page.items],
+        total=page.total,
+        offset=page.offset,
+        limit=page.limit,
+    )
+
+
+def _raise_evaluation_error(exc: Exception) -> NoReturn:
+    if isinstance(exc, (EvaluationDatasetNotFoundError, EvaluationRunNotFoundError)):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, EvaluationConfigurationError):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -184,8 +290,7 @@ async def read_evaluation_options(
     models: EvaluationModels,
 ) -> EvaluationOptionsResponse:
     """Return normalized models, prompt versions, and datasets."""
-    options = await get_evaluation_options(session, models=models)
-    return _options_response(options)
+    return _options_response(await get_evaluation_options(session, models=models))
 
 
 @router.post("/preview", response_model=EvaluationPreviewResponse)
@@ -202,22 +307,73 @@ async def preview_evaluation(
             **payload.model_dump(),
         )
     except (EvaluationConfigurationError, EvaluationDatasetNotFoundError) as exc:
-        _raise_configuration_error(exc)
+        _raise_evaluation_error(exc)
     return _preview_response(preview)
 
 
-@router.post("/run", response_model=EvaluationResponse)
-async def run_hardcoded_evaluation() -> EvaluationResponse:
-    """Run the single hardcoded prompt and question against local Ollama."""
+@router.post(
+    "",
+    response_model=EvaluationRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def start_evaluation(
+    payload: EvaluationConfigurationRequest,
+    background_tasks: BackgroundTasks,
+    session: DatabaseSession,
+    session_factory: EvaluationSessionFactory,
+    models: EvaluationModels,
+) -> EvaluationRunResponse:
+    """Persist a validated run and schedule its bounded background execution."""
     try:
-        result = await run_evaluation(EVALUATION_PROMPT, TEST_QUESTION)
-    except OllamaError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    return EvaluationResponse(
-        model=result.model,
-        response=result.response,
-        latency_ms=result.latency_ms,
-        input_tokens=result.input_tokens,
-        output_tokens=result.output_tokens,
+        evaluation = await create_evaluation_run(
+            session,
+            models=models,
+            **payload.model_dump(),
+        )
+    except (EvaluationConfigurationError, EvaluationDatasetNotFoundError) as exc:
+        _raise_evaluation_error(exc)
+    background_tasks.add_task(
+        execute_evaluation_run,
+        evaluation.id,
+        session_factory=session_factory,
     )
+    return _run_response(evaluation)
+
+
+@router.get("/{evaluation_id}", response_model=EvaluationRunResponse)
+async def read_evaluation_run(
+    evaluation_id: UUID,
+    session: DatabaseSession,
+) -> EvaluationRunResponse:
+    """Return current progress for one persisted evaluation."""
+    try:
+        evaluation = await get_evaluation_run(session, evaluation_id)
+    except EvaluationRunNotFoundError as exc:
+        _raise_evaluation_error(exc)
+    return _run_response(evaluation)
+
+
+@router.get(
+    "/{evaluation_id}/results",
+    response_model=EvaluationResultPageResponse,
+)
+async def read_evaluation_results(
+    evaluation_id: UUID,
+    session: DatabaseSession,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[
+        int,
+        Query(ge=1, le=MAX_RESULT_PAGE_SIZE),
+    ] = DEFAULT_RESULT_PAGE_SIZE,
+) -> EvaluationResultPageResponse:
+    """Return one bounded page of stored result snapshots."""
+    try:
+        page = await list_evaluation_results(
+            session,
+            evaluation_id,
+            offset=offset,
+            limit=limit,
+        )
+    except EvaluationRunNotFoundError as exc:
+        _raise_evaluation_error(exc)
+    return _result_page_response(page)

@@ -1,0 +1,123 @@
+"""Persistent evaluation runs and immutable per-request result snapshots."""
+
+from datetime import datetime
+from uuid import UUID, uuid4
+
+from sqlalchemy import CheckConstraint, ForeignKey, String, Text, UniqueConstraint, Uuid
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .base import Base, UTCDateTime, utc_now
+
+
+class EvaluationRun(Base):
+    """One persistently tracked execution of a validated configuration."""
+
+    __tablename__ = "evaluation_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed')",
+            name="status_valid",
+        ),
+        CheckConstraint("repetitions >= 1", name="repetitions_positive"),
+        CheckConstraint("total_requests >= 1", name="total_requests_positive"),
+        CheckConstraint(
+            "completed_requests >= 0 AND completed_requests <= total_requests",
+            name="completed_requests_valid",
+        ),
+        CheckConstraint(
+            "successful_requests >= 0 AND failed_requests >= 0",
+            name="result_counts_nonnegative",
+        ),
+        CheckConstraint(
+            "successful_requests + failed_requests = completed_requests",
+            name="result_counts_consistent",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    dataset_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    dataset_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    repetitions: Mapped[int] = mapped_column(nullable=False)
+    total_requests: Mapped[int] = mapped_column(nullable=False)
+    completed_requests: Mapped[int] = mapped_column(nullable=False, default=0)
+    successful_requests: Mapped[int] = mapped_column(nullable=False, default=0)
+    failed_requests: Mapped[int] = mapped_column(nullable=False, default=0)
+    failure_message: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=utc_now
+    )
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    results: Mapped[list["EvaluationResult"]] = relationship(
+        back_populates="evaluation",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class EvaluationResult(Base):
+    """Immutable inputs and mutable outcome for one provider request."""
+
+    __tablename__ = "evaluation_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "evaluation_id",
+            "sequence_number",
+            name="uq_evaluation_results_evaluation_id_sequence_number",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'succeeded', 'failed')",
+            name="status_valid",
+        ),
+        CheckConstraint("sequence_number >= 1", name="sequence_number_positive"),
+        CheckConstraint("repetition >= 1", name="repetition_positive"),
+        CheckConstraint("max_output_tokens >= 1", name="max_output_tokens_positive"),
+        CheckConstraint(
+            "latency_ms IS NULL OR latency_ms >= 0", name="latency_nonnegative"
+        ),
+        CheckConstraint(
+            "input_tokens IS NULL OR input_tokens >= 0",
+            name="input_tokens_nonnegative",
+        ),
+        CheckConstraint(
+            "output_tokens IS NULL OR output_tokens >= 0",
+            name="output_tokens_nonnegative",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    evaluation_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("evaluation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sequence_number: Mapped[int] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    model_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    reported_model_name: Mapped[str | None] = mapped_column(String(200))
+    prompt_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    prompt_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    prompt_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    prompt_version_number: Mapped[int] = mapped_column(nullable=False)
+    test_case_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    repetition: Mapped[int] = mapped_column(nullable=False)
+    max_output_tokens: Mapped[int] = mapped_column(nullable=False)
+    rendered_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    test_input: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_output: Mapped[str] = mapped_column(Text, nullable=False)
+    generated_output: Mapped[str | None] = mapped_column(Text)
+    error_code: Mapped[str | None] = mapped_column(String(50))
+    error_message: Mapped[str | None] = mapped_column(String(500))
+    latency_ms: Mapped[int | None] = mapped_column()
+    input_tokens: Mapped[int | None] = mapped_column()
+    output_tokens: Mapped[int | None] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=utc_now
+    )
+    started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    evaluation: Mapped[EvaluationRun] = relationship(back_populates="results")

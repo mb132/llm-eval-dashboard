@@ -39,6 +39,68 @@ export type EvaluationPreview = EvaluationConfiguration & {
   total_requests: number
 }
 
+export type EvaluationRunStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+
+export type EvaluationResultStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+
+export type EvaluationRun = {
+  id: string
+  status: EvaluationRunStatus
+  dataset_id: string
+  dataset_name: string
+  repetitions: number
+  total_requests: number
+  completed_requests: number
+  successful_requests: number
+  failed_requests: number
+  failure_message: string | null
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+}
+
+export type EvaluationResult = {
+  id: string
+  sequence_number: number
+  status: EvaluationResultStatus
+  model_id: string
+  model_provider: string
+  model_name: string
+  reported_model_name: string | null
+  prompt_id: string
+  prompt_version_id: string
+  prompt_name: string
+  prompt_version_number: number
+  test_case_id: string
+  repetition: number
+  max_output_tokens: number
+  test_input: string
+  expected_output: string
+  generated_output: string | null
+  error_code: string | null
+  error_message: string | null
+  latency_ms: number | null
+  input_tokens: number | null
+  output_tokens: number | null
+  started_at: string | null
+  completed_at: string | null
+}
+
+export type EvaluationResultPage = {
+  items: EvaluationResult[]
+  total: number
+  offset: number
+  limit: number
+}
+
 type ValidationIssue = { msg?: string }
 type ApiError = { detail?: string | ValidationIssue[] }
 
@@ -83,4 +145,32 @@ export function previewEvaluation(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(configuration),
   })
+}
+
+export function startEvaluation(
+  configuration: EvaluationConfiguration,
+): Promise<EvaluationRun> {
+  return request<EvaluationRun>("/api/evaluations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(configuration),
+  })
+}
+
+export function getEvaluationRun(evaluationId: string): Promise<EvaluationRun> {
+  return request<EvaluationRun>(`/api/evaluations/${evaluationId}`)
+}
+
+export function getEvaluationResults(
+  evaluationId: string,
+  offset = 0,
+  limit = 50,
+): Promise<EvaluationResultPage> {
+  const query = new URLSearchParams({
+    offset: String(offset),
+    limit: String(limit),
+  })
+  return request<EvaluationResultPage>(
+    `/api/evaluations/${evaluationId}/results?${query}`,
+  )
 }

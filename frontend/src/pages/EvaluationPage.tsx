@@ -6,11 +6,12 @@ import {
   RefreshCw,
 } from "lucide-react"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 
 import {
   getEvaluationOptions,
   previewEvaluation,
+  startEvaluation,
   type EvaluationConfiguration,
   type EvaluationOptions,
   type EvaluationPreview,
@@ -27,6 +28,7 @@ import {
 import { Input } from "@/components/ui/input"
 
 export function EvaluationPage() {
+  const navigate = useNavigate()
   const [options, setOptions] = useState<EvaluationOptions | null>(null)
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([])
   const [selectedPromptVersionIds, setSelectedPromptVersionIds] = useState<
@@ -37,8 +39,10 @@ export function EvaluationPage() {
   const [preview, setPreview] = useState<EvaluationPreview | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isPreviewing, setIsPreviewing] = useState(false)
+  const [isStarting, setIsStarting] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [startError, setStartError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -88,6 +92,27 @@ export function EvaluationPage() {
     callback()
     setPreview(null)
     setPreviewError(null)
+    setStartError(null)
+  }
+
+  async function handleStart() {
+    if (!preview || isStarting) return
+    setIsStarting(true)
+    setStartError(null)
+    try {
+      const evaluation = await startEvaluation({
+        model_ids: preview.model_ids,
+        prompt_version_ids: preview.prompt_version_ids,
+        dataset_id: preview.dataset_id,
+        repetitions: preview.repetitions,
+      })
+      navigate(`/evaluations/${evaluation.id}`)
+    } catch (error) {
+      setStartError(
+        error instanceof Error ? error.message : "Could not start the evaluation.",
+      )
+      setIsStarting(false)
+    }
   }
 
   function toggleSelection(
@@ -293,7 +318,7 @@ export function EvaluationPage() {
                 <h2>Configuration</h2>
               </CardTitle>
               <CardDescription>
-                Review the expected run size before execution is added in F05.
+                Review the expected run size before starting the evaluation.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -341,7 +366,14 @@ export function EvaluationPage() {
             </CardContent>
           </Card>
 
-          {preview && <PreviewCard preview={preview} />}
+          {preview && (
+            <PreviewCard
+              preview={preview}
+              isStarting={isStarting}
+              startError={startError}
+              onStart={handleStart}
+            />
+          )}
         </aside>
       </form>
     </div>
@@ -439,7 +471,17 @@ function SummaryValue({ label, value }: { label: string; value: number }) {
   )
 }
 
-function PreviewCard({ preview }: { preview: EvaluationPreview }) {
+function PreviewCard({
+  preview,
+  isStarting,
+  startError,
+  onStart,
+}: {
+  preview: EvaluationPreview
+  isStarting: boolean
+  startError: string | null
+  onStart: () => void
+}) {
   return (
     <Card className="border-green-200 bg-green-50 shadow-sm" aria-live="polite">
       <CardHeader>
@@ -450,7 +492,7 @@ function PreviewCard({ preview }: { preview: EvaluationPreview }) {
           </CardTitle>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
         <dl className="space-y-3 text-sm">
           <PreviewValue
             label="Model × prompt combinations"
@@ -466,6 +508,16 @@ function PreviewCard({ preview }: { preview: EvaluationPreview }) {
             <dd>{preview.total_requests}</dd>
           </div>
         </dl>
+        {startError && <ErrorMessage message={startError} />}
+        <Button
+          type="button"
+          className="w-full"
+          disabled={isStarting}
+          onClick={onStart}
+        >
+          {isStarting && <LoaderCircle className="mr-2 size-4 animate-spin" />}
+          {isStarting ? "Starting evaluation…" : "Start evaluation"}
+        </Button>
       </CardContent>
     </Card>
   )

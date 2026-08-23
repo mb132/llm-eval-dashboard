@@ -2,6 +2,7 @@ import { Database, FlaskConical, MessageSquareText } from "lucide-react"
 import { NavLink, Route, Routes } from "react-router-dom"
 
 import { EvaluationPage } from "@/pages/EvaluationPage"
+import { EvaluationRunPage } from "@/pages/EvaluationRunPage"
 import { DatasetDetailPage } from "@/pages/DatasetDetailPage"
 import { DatasetsPage } from "@/pages/DatasetsPage"
 import { PromptDetailPage } from "@/pages/PromptDetailPage"
@@ -42,6 +43,7 @@ export default function App() {
 
         <Routes>
           <Route index element={<EvaluationPage />} />
+          <Route path="evaluations/:evaluationId" element={<EvaluationRunPage />} />
           <Route path="prompts" element={<PromptsPage />} />
           <Route path="prompts/:promptId" element={<PromptDetailPage />} />
           <Route path="datasets" element={<DatasetsPage />} />

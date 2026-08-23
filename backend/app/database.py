@@ -40,6 +40,11 @@ engine = create_database_engine()
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
 
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Return the application session factory for background work."""
+    return SessionFactory
+
+
 async def get_session() -> AsyncIterator[AsyncSession]:
     """Yield one async database session per API request."""
     async with SessionFactory() as session:

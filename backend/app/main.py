@@ -1,5 +1,6 @@
-"""FastAPI application serving the production frontend."""
+"""FastAPI application serving the API and production frontend."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -9,8 +10,19 @@ from fastapi.staticfiles import StaticFiles
 from .api.datasets import router as datasets_router
 from .api.evaluations import router as evaluations_router
 from .api.prompts import router as prompts_router
+from .database import SessionFactory
+from .services.evaluation_execution import fail_interrupted_runs
 
-app = FastAPI(title="LLM Evaluation Platform")
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Reconcile work interrupted by a previous local server process."""
+    await fail_interrupted_runs(application.state.evaluation_session_factory)
+    yield
+
+
+app = FastAPI(title="LLM Evaluation Platform", lifespan=lifespan)
+app.state.evaluation_session_factory = SessionFactory
 app.include_router(datasets_router)
 app.include_router(evaluations_router)
 app.include_router(prompts_router)

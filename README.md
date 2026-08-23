@@ -1,9 +1,9 @@
 # LLM Evaluation Platform
 
-Evaluation configuration foundation using FastAPI, React, and a local Ollama
-model. The application also manages versioned prompt templates and reusable
-test datasets persisted in SQLite. Install and start Ollama separately, then
-make the model available:
+Persistent evaluation execution using FastAPI, React, and a local Ollama model.
+The application combines immutable prompt versions with reusable test datasets,
+tracks progress, and stores every raw model response in SQLite. Install and
+start Ollama separately, then make the model available:
 
 ```bash
 ollama run gemma4:e4b
@@ -48,6 +48,18 @@ integrated, its temporary model catalog exposes only this server-configured
 Ollama model. F01 must replace that catalog with persisted active models; the
 evaluation API and UI already support multiple model IDs.
 
+After reviewing a configuration, start the evaluation from the same page. The
+server persists its inputs first, processes up to four model requests in the
+background, and opens a progress page that can be refreshed safely. Individual
+request failures remain visible without stopping the rest of the run. This is a
+local single-process worker: a server restart marks unfinished work as failed
+instead of replaying requests whose provider-side outcome is unknown. Quality
+scores and cost estimates are intentionally added by later features.
+
+The application has no authentication or tenant isolation and is intended for
+trusted local/demo use only. Do not expose it publicly or store confidential
+prompts and results on a shared instance.
+
 Prompt management is available at <http://localhost:5173/prompts>. Prompt
 content must contain `{{input}}` exactly once. Editing content creates an
 immutable new version; existing versions remain available.
@@ -71,6 +83,19 @@ credentials:
 uv run pytest                         # all backend tests
 npm --prefix frontend run test        # all frontend tests
 uv run pytest backend/tests/test_migrations.py  # migration tests only
+```
+
+## Code quality
+
+Run checks from the repository root. The `--check` commands do not modify files;
+`ruff format` applies the Python formatting:
+
+```bash
+uv run ruff check .                  # Python linting
+uv run ruff format --check .         # check Python formatting
+uv run ruff format .                 # apply Python formatting
+uv run ty check                      # Python type checking
+npm --prefix frontend run lint       # TypeScript type checking
 ```
 
 ## Database migrations

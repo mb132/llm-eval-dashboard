@@ -4,11 +4,11 @@ import asyncio
 from collections.abc import Iterator
 
 import pytest
-from app.database import get_session
+from app.database import get_session, get_session_factory
 from app.main import app
 from app.models import Base
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 
@@ -27,11 +27,27 @@ def prompt_client(tmp_path) -> Iterator[TestClient]:
         async with session_factory() as session:
             yield session
 
+    def override_session_factory():
+        return session_factory
+
     asyncio.run(create_schema())
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_session_factory] = override_session_factory
+    original_session_factory = app.state.evaluation_session_factory
+    app.state.evaluation_session_factory = session_factory
     try:
         with TestClient(app) as client:
             yield client
     finally:
         app.dependency_overrides.pop(get_session, None)
+        app.dependency_overrides.pop(get_session_factory, None)
+        app.state.evaluation_session_factory = original_session_factory
         asyncio.run(engine.dispose())
+
+
+@pytest.fixture
+def evaluation_session_factory(
+    prompt_client: TestClient,
+) -> async_sessionmaker[AsyncSession]:
+    """Expose the isolated session factory used by the API fixture."""
+    return app.state.evaluation_session_factory
