@@ -2,7 +2,8 @@
 
 Minimal end-to-end evaluation flow using FastAPI, React, and a local Ollama
 model. The application also manages versioned prompt templates persisted in
-SQLite. Install and start Ollama separately, then make the model available:
+SQLite and reusable evaluation datasets with traceable test cases. Install and
+start Ollama separately, then make the model available:
 
 ```bash
 ollama run gemma4:e4b
@@ -41,6 +42,27 @@ Prompt management is available at <http://localhost:5173/prompts>. Prompt
 content must contain `{{input}}` exactly once. Editing content creates an
 immutable new version; existing versions remain available.
 
+Dataset management is available at <http://localhost:5173/datasets>. Creating a
+dataset also creates its required first test case. Every test case requires an
+input and expected answer and may include a category plus up to 20 flat metadata
+fields. A dataset always retains at least one test case and is limited to 500
+cases to bound later evaluation cost and resource use.
+
+JSON and CSV dataset import are intentionally deferred. A future import feature
+should reuse the same server-side validation and size limits rather than adding
+a separate ingestion path.
+
+## Tests
+
+Run tests from the repository root. They work offline without Ollama or API
+credentials:
+
+```bash
+uv run pytest                         # all backend tests
+npm --prefix frontend run test        # all frontend tests
+uv run pytest backend/tests/test_migrations.py  # migration tests only
+```
+
 ## Database migrations
 
 SQLAlchemy defines the database models and Alembic versions schema changes. Do
@@ -56,16 +78,8 @@ uv run alembic check
 
 Review generated migrations for constraints, data preservation, downgrade
 behavior, and SQLite compatibility. `alembic check` verifies that model changes
-are represented by migrations.
-
-Test the complete migration lifecycle separately:
-
-```bash
-uv run pytest backend/tests/test_migrations.py
-```
-
-The test uses a disposable SQLite database, upgrades to `head`, downgrades to
-`base`, and upgrades to `head` again. It does not modify `llm_eval.db`.
+are represented by migrations. The migration test uses a disposable SQLite
+database and does not modify `llm_eval.db`.
 
 ## Build locally
 

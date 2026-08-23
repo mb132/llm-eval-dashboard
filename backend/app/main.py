@@ -6,10 +6,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .api.datasets import router as datasets_router
 from .api.evaluations import router as evaluations_router
 from .api.prompts import router as prompts_router
 
 app = FastAPI(title="LLM Evaluation Platform")
+app.include_router(datasets_router)
 app.include_router(evaluations_router)
 app.include_router(prompts_router)
 

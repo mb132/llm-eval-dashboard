@@ -18,7 +18,8 @@ def table_names(database_path: Path) -> set[str]:
     return {row[0] for row in rows}
 
 
-def test_prompt_migration_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
+def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
+    """Verify the complete schema migration lifecycle on a disposable database."""
     database_path = tmp_path / "migration.db"
     config = Config("alembic.ini")
     config.attributes["database_url"] = (
@@ -28,8 +29,10 @@ def test_prompt_migration_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> Non
     command.upgrade(config, "head")
     assert table_names(database_path) == {
         "alembic_version",
+        "datasets",
         "prompt_versions",
         "prompts",
+        "test_cases",
     }
 
     command.downgrade(config, "base")
@@ -37,3 +40,4 @@ def test_prompt_migration_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> Non
 
     command.upgrade(config, "head")
     assert "prompt_versions" in table_names(database_path)
+    assert "test_cases" in table_names(database_path)
