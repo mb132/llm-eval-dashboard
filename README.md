@@ -1,9 +1,9 @@
 # LLM Evaluation Platform
 
-Minimal end-to-end evaluation flow using FastAPI, React, and a local Ollama
-model. The application also manages versioned prompt templates persisted in
-SQLite and reusable evaluation datasets with traceable test cases. Install and
-start Ollama separately, then make the model available:
+Evaluation configuration foundation using FastAPI, React, and a local Ollama
+model. The application also manages versioned prompt templates and reusable
+test datasets persisted in SQLite. Install and start Ollama separately, then
+make the model available:
 
 ```bash
 ollama run gemma4:e4b
@@ -27,6 +27,11 @@ uv run alembic upgrade head
 uv run fastapi dev backend/app/main.py
 ```
 
+During development, open the React application at <http://localhost:5173>;
+Vite proxies its `/api` requests to FastAPI on port `8000`. After building the
+frontend or when using Docker, FastAPI serves the application on
+<http://localhost:8000> instead.
+
 Run `alembic upgrade head` after pulling changes that contain a new database
 migration. The default SQLite database is `llm_eval.db` in the repository root;
 database files are ignored by Git.
@@ -37,6 +42,11 @@ either value when needed:
 ```bash
 OLLAMA_BASE_URL=http://localhost:11434 OLLAMA_MODEL=gemma4:e4b uv run fastapi dev backend/app/main.py
 ```
+
+Evaluation configuration is available at <http://localhost:5173>. Until F01 is
+integrated, its temporary model catalog exposes only this server-configured
+Ollama model. F01 must replace that catalog with persisted active models; the
+evaluation API and UI already support multiple model IDs.
 
 Prompt management is available at <http://localhost:5173/prompts>. Prompt
 content must contain `{{input}}` exactly once. Editing content creates an

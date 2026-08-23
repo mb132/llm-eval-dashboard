@@ -50,13 +50,6 @@ describe("prompt management", () => {
     vi.stubGlobal("fetch", fetchMock)
   })
 
-  it("keeps the existing evaluation available at the root route", () => {
-    renderApp()
-
-    expect(screen.getByRole("heading", { name: "LLM Evaluation" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Run Evaluation" })).toBeInTheDocument()
-  })
-
   it("shows the empty prompt state and explains the input placeholder", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([]))
 
