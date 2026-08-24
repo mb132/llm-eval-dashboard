@@ -2,8 +2,9 @@
 
 Persistent evaluation execution using FastAPI, React, and a local Ollama model.
 The application combines immutable prompt versions with reusable test datasets,
-tracks progress, and stores every raw model response in SQLite. Install and
-start Ollama separately, then make the model available:
+tracks progress, stores every raw model response in SQLite, and includes
+persisted model configuration plus a one-shot playground. Install and start
+Ollama separately, then make the model available:
 
 ```bash
 ollama run gemma4:e4b
@@ -43,9 +44,9 @@ either value when needed:
 OLLAMA_BASE_URL=http://localhost:11434 OLLAMA_MODEL=gemma4:e4b uv run fastapi dev backend/app/main.py
 ```
 
-Evaluation configuration is available at <http://localhost:5173>. Until F01 is
-integrated, its temporary model catalog exposes only this server-configured
-Ollama model. F01 must replace that catalog with persisted active models; the
+Evaluation configuration is available at <http://localhost:5173>. Its current
+model catalog exposes the server-configured Ollama model; connecting persisted
+active model configurations to evaluation execution remains future work. The
 evaluation API and UI already support multiple model IDs.
 
 After reviewing a configuration, start the evaluation from the same page. The
@@ -126,6 +127,32 @@ uv run fastapi dev backend/app/main.py
 ```
 
 Open <http://localhost:8000>.
+
+## Configure models
+
+Open the **Models** page to add Ollama, OpenAI, Anthropic, Google Gemini,
+OpenAI-compatible, or custom endpoint configurations. Records are persisted in
+the same Alembic-managed SQLite database (`./llm_eval.db` by default). Set
+`DATABASE_URL` to use another
+SQLite location.
+
+Provider credentials remain server-side. Copy `.env.example` to `.env`, set the
+required credential values, and enter only the provider's corresponding
+environment variable name (for example, `OPENAI_API_KEY`) in a model
+configuration. Secret values are never stored in SQLite or returned by the API.
+For safety, custom base URLs cannot use server credentials; OpenAI,
+Anthropic, and Gemini use their fixed official endpoints.
+
+## Use the playground
+
+Open the **Playground** page, select an active configured model, and send a
+one-shot text prompt with an optional system prompt. The backend resolves the
+configured credential only for that request and returns the reply, latency,
+token usage, and finish reason. Playground prompts and replies are not stored.
+
+Ollama, OpenAI, Anthropic, Gemini, and OpenAI-compatible configurations are
+executable. Custom endpoints remain configuration-only until a request protocol
+is defined for them.
 
 ## Start with Docker
 

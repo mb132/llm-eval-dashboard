@@ -1,10 +1,18 @@
-import { Database, FlaskConical, MessageSquareText } from "lucide-react"
+import {
+  Database,
+  FlaskConical,
+  MessageSquareText,
+  Settings2,
+  SquareTerminal,
+} from "lucide-react"
 import { NavLink, Route, Routes } from "react-router-dom"
 
-import { EvaluationPage } from "@/pages/EvaluationPage"
-import { EvaluationRunPage } from "@/pages/EvaluationRunPage"
 import { DatasetDetailPage } from "@/pages/DatasetDetailPage"
 import { DatasetsPage } from "@/pages/DatasetsPage"
+import { EvaluationPage } from "@/pages/EvaluationPage"
+import { EvaluationRunPage } from "@/pages/EvaluationRunPage"
+import { ModelsPage } from "@/pages/models-page"
+import { PlaygroundPage } from "@/pages/playground-page"
 import { PromptDetailPage } from "@/pages/PromptDetailPage"
 import { PromptsPage } from "@/pages/PromptsPage"
 
@@ -12,12 +20,14 @@ const navigation = [
   { to: "/", label: "Evaluation", icon: FlaskConical, end: true },
   { to: "/prompts", label: "Prompts", icon: MessageSquareText, end: false },
   { to: "/datasets", label: "Datasets", icon: Database, end: false },
+  { to: "/playground", label: "Playground", icon: SquareTerminal, end: false },
+  { to: "/models", label: "Models", icon: Settings2, end: false },
 ]
 
 export default function App() {
   return (
     <main className="min-h-screen bg-background px-4 py-6 sm:px-6 sm:py-10">
-      <div className="mx-auto w-full max-w-5xl">
+      <div className="mx-auto w-full max-w-6xl">
         <nav
           className="mb-10 flex flex-wrap items-center gap-2 border-b pb-4"
           aria-label="Primary navigation"
@@ -48,6 +58,8 @@ export default function App() {
           <Route path="prompts/:promptId" element={<PromptDetailPage />} />
           <Route path="datasets" element={<DatasetsPage />} />
           <Route path="datasets/:datasetId" element={<DatasetDetailPage />} />
+          <Route path="playground" element={<PlaygroundPage />} />
+          <Route path="models" element={<ModelsPage />} />
         </Routes>
       </div>
     </main>

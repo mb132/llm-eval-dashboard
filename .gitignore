@@ -5,11 +5,13 @@ __pycache__/
 .ruff_cache/
 .venv/
 .uv-cache/
+data/
 *.db
 *.db-shm
 *.db-wal
 .env
 .env.*
+!.env.example
 
 # Frontend
 frontend/dist/
