@@ -3,10 +3,10 @@
 from collections.abc import Iterator
 
 import pytest
+from app.api.evaluations import get_evaluation_models
 from app.main import app
 from app.services.evaluation_configuration import (
     ModelOption,
-    get_evaluation_model_options,
 )
 from fastapi.testclient import TestClient
 
@@ -19,15 +19,25 @@ def two_model_client(prompt_client: TestClient) -> Iterator[TestClient]:
 
     def fake_model_options() -> list[ModelOption]:
         return [
-            ModelOption(id="model-a", provider="ollama", name="Model A"),
-            ModelOption(id="model-b", provider="ollama", name="Model B"),
+            ModelOption(
+                id="model-a",
+                provider="ollama",
+                name="Model A",
+                model_name="model-a:latest",
+            ),
+            ModelOption(
+                id="model-b",
+                provider="ollama",
+                name="Model B",
+                model_name="model-b:latest",
+            ),
         ]
 
-    app.dependency_overrides[get_evaluation_model_options] = fake_model_options
+    app.dependency_overrides[get_evaluation_models] = fake_model_options
     try:
         yield prompt_client
     finally:
-        app.dependency_overrides.pop(get_evaluation_model_options, None)
+        app.dependency_overrides.pop(get_evaluation_models, None)
 
 
 def create_prompt_with_two_versions(client: TestClient) -> tuple[str, str]:
@@ -67,13 +77,37 @@ def create_dataset_with_two_cases(client: TestClient) -> str:
     return dataset["id"]
 
 
-def test_options_expose_normalized_ollama_without_server_configuration(
+def test_options_expose_active_persisted_runnable_models(
     prompt_client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Return selectable data without leaking URLs or other server settings."""
-    monkeypatch.setenv("OLLAMA_MODEL", "local-model")
-    monkeypatch.setenv("OLLAMA_BASE_URL", "http://private-provider.internal")
+    """Return active runnable models without leaking provider settings."""
+    active = prompt_client.post(
+        "/api/models",
+        json={
+            "display_name": "Local model",
+            "provider": "ollama",
+            "model_name": "local-model",
+            "base_url": "http://private-provider.internal",
+        },
+    ).json()
+    prompt_client.post(
+        "/api/models",
+        json={
+            "display_name": "Inactive model",
+            "provider": "ollama",
+            "model_name": "inactive-model",
+            "active": False,
+        },
+    )
+    prompt_client.post(
+        "/api/models",
+        json={
+            "display_name": "Protocol-free endpoint",
+            "provider": "custom",
+            "model_name": "custom-model",
+            "base_url": "https://custom.example",
+        },
+    )
     first_version_id, second_version_id = create_prompt_with_two_versions(prompt_client)
     dataset_id = create_dataset_with_two_cases(prompt_client)
 
@@ -82,7 +116,12 @@ def test_options_expose_normalized_ollama_without_server_configuration(
     assert response.status_code == 200
     body = response.json()
     assert body["models"] == [
-        {"id": "ollama-default", "provider": "ollama", "name": "local-model"}
+        {
+            "id": str(active["id"]),
+            "provider": "ollama",
+            "name": "Local model",
+            "model_name": "local-model",
+        }
     ]
     assert [item["id"] for item in body["prompt_versions"]] == [
         second_version_id,
@@ -97,7 +136,7 @@ def test_options_expose_normalized_ollama_without_server_configuration(
     ]
     serialized = response.text
     assert "private-provider.internal" not in serialized
-    assert "OLLAMA_BASE_URL" not in serialized
+    assert "custom.example" not in serialized
 
 
 def test_preview_supports_multiple_models_and_prompt_versions(

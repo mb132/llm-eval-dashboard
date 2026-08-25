@@ -10,15 +10,27 @@ from app.services.evaluation_execution import (
     fail_interrupted_runs,
 )
 from app.services.ollama import OllamaError, OllamaResult
+from app.services.playground import PlaygroundResult
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-MODEL_ID = "ollama-default"
+MODEL_ID = "1"
 
 
 def create_inputs(client: TestClient, *, second_case: bool = True) -> tuple[str, str]:
     """Create one prompt version and a dataset for execution tests."""
+    if not client.get("/api/models").json():
+        model = client.post(
+            "/api/models",
+            json={
+                "display_name": "Local model",
+                "provider": "ollama",
+                "model_name": "test-model:latest",
+                "base_url": "http://localhost:11434",
+            },
+        )
+        assert model.status_code == 201
     prompt = client.post(
         "/api/prompts",
         json={
@@ -159,6 +171,53 @@ def test_execution_completes_with_individual_provider_failure(
     assert results[0]["input_tokens"] is None
     assert results[1]["error_code"] == "synthetic"
     assert results[1]["error_message"] == "Synthetic provider failure."
+
+
+def test_execution_uses_the_persisted_model_configuration(
+    prompt_client: TestClient,
+    evaluation_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Dispatch evaluation requests through the selected configured model."""
+    disable_background_execution(monkeypatch)
+    version_id, dataset_id = create_inputs(prompt_client, second_case=False)
+    run = prompt_client.post(
+        "/api/evaluations", json=configuration(version_id, dataset_id)
+    ).json()
+
+    async def fake_generate(model, prompt, system_prompt, *, client):
+        assert model.id == 1
+        assert model.display_name == "Local model"
+        assert model.provider == "ollama"
+        assert model.model_name == "test-model:latest"
+        assert model.base_url == "http://localhost:11434"
+        assert prompt == "Answer this exactly: Capital of France?"
+        assert system_prompt is None
+        assert client is not None
+        return PlaygroundResult(
+            response="Paris",
+            latency_ms=8,
+            input_tokens=6,
+            output_tokens=1,
+            total_tokens=7,
+            finish_reason="stop",
+        )
+
+    monkeypatch.setattr(
+        "app.services.evaluation_execution.generate_prompt", fake_generate
+    )
+    asyncio.run(
+        execute_evaluation_run(
+            UUID(run["id"]),
+            session_factory=evaluation_session_factory,
+            semaphore=asyncio.Semaphore(1),
+        )
+    )
+
+    results = prompt_client.get(f"/api/evaluations/{run['id']}/results").json()
+    assert results["items"][0]["status"] == "succeeded"
+    assert results["items"][0]["generated_output"] == "Paris"
+    assert results["items"][0]["reported_model_name"] == "test-model:latest"
 
 
 def test_unexpected_execution_error_fails_run_without_leaking_details(
