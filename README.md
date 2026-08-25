@@ -44,10 +44,9 @@ either value when needed:
 OLLAMA_BASE_URL=http://localhost:11434 OLLAMA_MODEL=gemma4:e4b uv run fastapi dev backend/app/main.py
 ```
 
-Evaluation configuration is available at <http://localhost:5173>. Its current
-model catalog exposes the server-configured Ollama model; connecting persisted
-active model configurations to evaluation execution remains future work. The
-evaluation API and UI already support multiple model IDs.
+Evaluation configuration is available at <http://localhost:5173>. Its model
+multi-select lists active persisted configurations with executable provider
+protocols. Evaluations support selecting and comparing multiple model IDs.
 
 After reviewing a configuration, start the evaluation from the same page. The
 server persists its inputs first, processes up to four model requests in the

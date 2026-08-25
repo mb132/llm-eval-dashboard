@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 import httpx
@@ -16,6 +17,7 @@ from ..models import (
     Dataset,
     EvaluationResult,
     EvaluationRun,
+    ModelConfiguration,
     Prompt,
     PromptVersion,
 )
@@ -30,7 +32,12 @@ from .ollama import (
     REQUEST_TIMEOUT_SECONDS,
     OllamaError,
     OllamaResult,
-    generate_ollama_response,
+)
+from .playground import (
+    PlaygroundConfigurationError,
+    PlaygroundProviderError,
+    PlaygroundTimeoutError,
+    generate_prompt,
 )
 from .prompts import INPUT_PLACEHOLDER
 
@@ -67,6 +74,46 @@ class _ExecutionSnapshot:
     provider: str
     model: str
     prompt: str
+    configuration: "_ModelConfigurationSnapshot | None"
+
+
+@dataclass(frozen=True, slots=True)
+class _ModelConfigurationSnapshot:
+    """Provider settings copied before concurrent evaluation requests begin."""
+
+    id: int
+    display_name: str
+    provider: str
+    model_name: str
+    base_url: str | None
+    api_key_env_var: str | None
+    parameters: dict[str, Any]
+
+    @classmethod
+    def from_model(
+        cls, model: ModelConfiguration
+    ) -> "_ModelConfigurationSnapshot":
+        return cls(
+            id=model.id,
+            display_name=model.display_name,
+            provider=model.provider,
+            model_name=model.model_name,
+            base_url=model.base_url,
+            api_key_env_var=model.api_key_env_var,
+            parameters=dict(model.parameters),
+        )
+
+    def to_model(self) -> ModelConfiguration:
+        return ModelConfiguration(
+            id=self.id,
+            display_name=self.display_name,
+            provider=self.provider,
+            model_name=self.model_name,
+            base_url=self.base_url,
+            api_key_env_var=self.api_key_env_var,
+            parameters=dict(self.parameters),
+            active=True,
+        )
 
 
 async def create_evaluation_run(
@@ -202,7 +249,7 @@ async def execute_evaluation_run(
     evaluation_id: UUID,
     *,
     session_factory: async_sessionmaker[AsyncSession] = SessionFactory,
-    provider_call: ProviderCall = generate_ollama_response,
+    provider_call: ProviderCall | None = None,
     semaphore: asyncio.Semaphore = _model_request_semaphore,
 ) -> None:
     """Execute pending result snapshots and persist every outcome independently."""
@@ -270,6 +317,26 @@ async def _start_run(
         evaluation = (await session.scalars(statement)).one_or_none()
         if evaluation is None or evaluation.status != "pending":
             return None
+        configured_model_ids = {
+            int(result.model_id)
+            for result in evaluation.results
+            if result.model_id.isdigit()
+        }
+        configured_models = (
+            list(
+                await session.scalars(
+                    select(ModelConfiguration).where(
+                        ModelConfiguration.id.in_(configured_model_ids)
+                    )
+                )
+            )
+            if configured_model_ids
+            else []
+        )
+        configurations_by_id = {
+            str(model.id): _ModelConfigurationSnapshot.from_model(model)
+            for model in configured_models
+        }
         evaluation.status = "running"
         evaluation.started_at = utc_now()
         return [
@@ -278,6 +345,7 @@ async def _start_run(
                 provider=result.model_provider,
                 model=result.model_name,
                 prompt=result.rendered_prompt,
+                configuration=configurations_by_id.get(result.model_id),
             )
             for result in sorted(
                 evaluation.results, key=lambda item: item.sequence_number
@@ -289,26 +357,70 @@ async def _execute_result(
     snapshot: _ExecutionSnapshot,
     *,
     session_factory: async_sessionmaker[AsyncSession],
-    provider_call: ProviderCall,
+    provider_call: ProviderCall | None,
     client: httpx.AsyncClient,
     semaphore: asyncio.Semaphore,
 ) -> None:
     try:
         async with semaphore:
             await _mark_result_running(session_factory, snapshot.result_id)
-            if snapshot.provider != "ollama":
-                raise OllamaError(
-                    "The selected model provider is not supported by this server.",
-                    code="unsupported_provider",
+            if provider_call is None:
+                if snapshot.configuration is None:
+                    raise PlaygroundConfigurationError(
+                        "The selected model configuration no longer exists."
+                    )
+                result = await generate_prompt(
+                    snapshot.configuration.to_model(),
+                    snapshot.prompt,
+                    None,
+                    client=client,
                 )
-            outcome = await provider_call(
-                snapshot.prompt, snapshot.model, client=client
-            )
+                outcome = OllamaResult(
+                    model=snapshot.configuration.model_name,
+                    response=result.response,
+                    latency_ms=result.latency_ms,
+                    input_tokens=result.input_tokens,
+                    output_tokens=result.output_tokens,
+                )
+            else:
+                if snapshot.provider != "ollama":
+                    raise OllamaError(
+                        "The selected model provider is not supported by "
+                        "this test adapter.",
+                        code="unsupported_provider",
+                    )
+                outcome = await provider_call(
+                    snapshot.prompt, snapshot.model, client=client
+                )
     except OllamaError as exc:
         await _store_result_failure(
             session_factory,
             snapshot.result_id,
             error_code=exc.code,
+            error_message=str(exc),
+        )
+        return
+    except PlaygroundConfigurationError as exc:
+        await _store_result_failure(
+            session_factory,
+            snapshot.result_id,
+            error_code="configuration_error",
+            error_message=str(exc),
+        )
+        return
+    except PlaygroundTimeoutError as exc:
+        await _store_result_failure(
+            session_factory,
+            snapshot.result_id,
+            error_code="timeout",
+            error_message=str(exc),
+        )
+        return
+    except PlaygroundProviderError as exc:
+        await _store_result_failure(
+            session_factory,
+            snapshot.result_id,
+            error_code="provider_error",
             error_message=str(exc),
         )
         return

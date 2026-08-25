@@ -188,8 +188,9 @@ export function EvaluationPage() {
           >
             {options.models.length === 0 ? (
               <EmptySelection>
-                No models are available. Configure the server-side Ollama model
-                before creating an evaluation.
+                No active runnable models are available. Add or activate one on
+                the <LinkText to="/models">Models page</LinkText> before creating
+                an evaluation.
               </EmptySelection>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -212,6 +213,9 @@ export function EvaluationPage() {
                     />
                     <span>
                       <span className="block font-medium">{model.name}</span>
+                      <span className="mt-1 block font-mono text-xs text-muted-foreground">
+                        {model.model_name}
+                      </span>
                       <span className="mt-1 block text-xs uppercase tracking-wide text-muted-foreground">
                         {model.provider}
                       </span>

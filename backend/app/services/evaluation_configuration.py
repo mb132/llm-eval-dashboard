@@ -1,6 +1,5 @@
 """Evaluation option discovery and side-effect-free configuration validation."""
 
-import os
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -8,10 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.functions import count as sql_count
 
-from ..models import Dataset, Prompt, PromptVersion, TestCase
-from .ollama import DEFAULT_MODEL
+from ..models import Dataset, ModelConfiguration, Prompt, PromptVersion, TestCase
 
-OLLAMA_OPTION_ID = "ollama-default"
 MAX_SELECTED_MODELS = 10
 MAX_SELECTED_PROMPT_VERSIONS = 20
 MAX_REPETITIONS = 5
@@ -34,6 +31,7 @@ class ModelOption:
     id: str
     provider: str
     name: str
+    model_name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,15 +78,27 @@ class EvaluationPreview:
     total_requests: int
 
 
-def get_evaluation_model_options() -> list[ModelOption]:
-    """Expose the configured Ollama model through the temporary F01 seam."""
-    model_name = os.getenv("OLLAMA_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+async def get_evaluation_model_options(
+    session: AsyncSession,
+) -> list[ModelOption]:
+    """Return active persisted models with a supported execution protocol."""
+    statement = (
+        select(ModelConfiguration)
+        .where(
+            ModelConfiguration.active.is_(True),
+            ModelConfiguration.provider != "custom",
+        )
+        .order_by(ModelConfiguration.display_name.asc(), ModelConfiguration.id.asc())
+    )
+    configured_models = list(await session.scalars(statement))
     return [
         ModelOption(
-            id=OLLAMA_OPTION_ID,
-            provider="ollama",
-            name=model_name,
+            id=str(model.id),
+            provider=model.provider,
+            name=model.display_name,
+            model_name=model.model_name,
         )
+        for model in configured_models
     ]
 
 

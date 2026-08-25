@@ -16,7 +16,7 @@ const DATASET_ID = "1e9df267-fd16-46aa-bad8-82d91b4481fc"
 const VERSION_ID = "87ad64a0-6206-4921-a102-92b75fc25188"
 
 const options: EvaluationOptions = {
-  models: [{ id: "ollama-default", provider: "ollama", name: "Local model" }],
+  models: [{ id: "1", provider: "ollama", name: "Local model", model_name: "local-model:latest" }],
   prompt_versions: [
     {
       id: VERSION_ID,
@@ -30,7 +30,7 @@ const options: EvaluationOptions = {
 }
 
 const preview: EvaluationPreview = {
-  model_ids: ["ollama-default"],
+  model_ids: ["1"],
   prompt_version_ids: [VERSION_ID],
   dataset_id: DATASET_ID,
   repetitions: 1,
@@ -61,7 +61,7 @@ const result: EvaluationResult = {
   id: "c84899a0-4956-464e-a364-ec93c7817bf3",
   sequence_number: 1,
   status: "succeeded",
-  model_id: "ollama-default",
+  model_id: "1",
   model_provider: "ollama",
   model_name: "Local model",
   reported_model_name: "local-model:latest",
@@ -130,7 +130,7 @@ describe("evaluation execution", () => {
     const startCall = fetchMock.mock.calls[2]
     expect(String(startCall[0])).toBe("/api/evaluations")
     expect(JSON.parse(String(startCall[1]?.body))).toEqual({
-      model_ids: ["ollama-default"],
+      model_ids: ["1"],
       prompt_version_ids: [VERSION_ID],
       dataset_id: DATASET_ID,
       repetitions: 1,

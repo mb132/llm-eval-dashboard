@@ -12,8 +12,8 @@ const VERSION_TWO_ID = "c84899a0-4956-464e-a364-ec93c7817bf3"
 
 const options: EvaluationOptions = {
   models: [
-    { id: "model-a", provider: "ollama", name: "Model A" },
-    { id: "model-b", provider: "ollama", name: "Model B" },
+    { id: "model-a", provider: "ollama", name: "Model A", model_name: "model-a:latest" },
+    { id: "model-b", provider: "ollama", name: "Model B", model_name: "model-b:latest" },
   ],
   prompt_versions: [
     {

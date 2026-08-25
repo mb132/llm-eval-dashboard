@@ -2,6 +2,7 @@ export type EvaluationModelOption = {
   id: string
   provider: string
   name: string
+  model_name: string
 }
 
 export type EvaluationPromptVersionOption = {

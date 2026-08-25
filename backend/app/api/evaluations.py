@@ -39,8 +39,15 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_session)]
 EvaluationSessionFactory = Annotated[
     async_sessionmaker[AsyncSession], Depends(get_session_factory)
 ]
-EvaluationModels = Annotated[list[ModelOption], Depends(get_evaluation_model_options)]
 ModelId = Annotated[str, Field(min_length=1, max_length=100)]
+
+
+async def get_evaluation_models(session: DatabaseSession) -> list[ModelOption]:
+    """Resolve selectable models from persisted configuration records."""
+    return await get_evaluation_model_options(session)
+
+
+EvaluationModels = Annotated[list[ModelOption], Depends(get_evaluation_models)]
 
 
 class StrictRequest(BaseModel):
@@ -81,6 +88,7 @@ class ModelOptionResponse(BaseModel):
     id: str
     provider: str
     name: str
+    model_name: str
 
 
 class PromptVersionOptionResponse(BaseModel):
@@ -182,7 +190,12 @@ class EvaluationResultPageResponse(BaseModel):
 def _options_response(options: EvaluationOptions) -> EvaluationOptionsResponse:
     return EvaluationOptionsResponse(
         models=[
-            ModelOptionResponse(id=item.id, provider=item.provider, name=item.name)
+            ModelOptionResponse(
+                id=item.id,
+                provider=item.provider,
+                name=item.name,
+                model_name=item.model_name,
+            )
             for item in options.models
         ],
         prompt_versions=[
