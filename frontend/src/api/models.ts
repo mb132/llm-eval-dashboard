@@ -13,23 +13,37 @@ export type ModelConfiguration = {
   id: number
   display_name: string
   provider: Provider
+  provider_summary?: ProviderConfigurationSummary
   model_name: string
   base_url: string | null
   api_key_env_var: string | null
   has_credentials: boolean
   parameters: Record<string, unknown>
   active: boolean
+  runnable: boolean
+  unavailable_reason: string | null
   created_at: string
 }
 
 export type ModelConfigurationInput = {
   display_name: string
-  provider: Provider
+  provider_id?: number
+  /** @deprecated compatibility fields for the legacy form; provider_id is required by the API. */
+  provider?: Provider
   model_name: string
-  base_url: string | null
-  api_key_env_var: string | null
+  base_url?: string | null
+  api_key_env_var?: string | null
   parameters: Record<string, unknown>
   active: boolean
+}
+
+export type ProviderConfigurationSummary = {
+  id: number
+  display_name: string
+  kind: Provider
+  base_url: string | null
+  has_api_key: boolean
+  api_key_requirement: "required" | "optional" | "unsupported"
 }
 
 type ApiError = { detail?: string | Array<{ msg?: string }> }

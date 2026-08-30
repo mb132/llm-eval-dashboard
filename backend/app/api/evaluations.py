@@ -25,13 +25,17 @@ from ..services.evaluation_configuration import (
 )
 from ..services.evaluation_execution import (
     DEFAULT_RESULT_PAGE_SIZE,
+    DEFAULT_RUN_PAGE_SIZE,
     MAX_RESULT_PAGE_SIZE,
+    MAX_RUN_PAGE_SIZE,
     EvaluationRunNotFoundError,
+    EvaluationRunPage,
     ResultPage,
     create_evaluation_run,
     execute_evaluation_run,
     get_evaluation_run,
     list_evaluation_results,
+    list_evaluation_runs,
 )
 
 router = APIRouter(prefix="/api/evaluations", tags=["evaluations"])
@@ -166,6 +170,7 @@ class EvaluationResultResponse(BaseModel):
     test_case_id: UUID
     repetition: int
     max_output_tokens: int
+    rendered_prompt: str
     test_input: str
     expected_output: str
     generated_output: str | None
@@ -183,6 +188,17 @@ class EvaluationResultPageResponse(BaseModel):
 
     items: list[EvaluationResultResponse]
     total: int
+    offset: int
+    limit: int
+
+
+class EvaluationRunPageResponse(BaseModel):
+    """Bounded archive page with all-time run health totals."""
+
+    items: list[EvaluationRunResponse]
+    total: int
+    completed: int
+    failed: int
     offset: int
     limit: int
 
@@ -267,6 +283,7 @@ def _result_response(result: EvaluationResult) -> EvaluationResultResponse:
         test_case_id=result.test_case_id,
         repetition=result.repetition,
         max_output_tokens=result.max_output_tokens,
+        rendered_prompt=result.rendered_prompt,
         test_input=result.test_input,
         expected_output=result.expected_output,
         generated_output=result.generated_output,
@@ -284,6 +301,17 @@ def _result_page_response(page: ResultPage) -> EvaluationResultPageResponse:
     return EvaluationResultPageResponse(
         items=[_result_response(item) for item in page.items],
         total=page.total,
+        offset=page.offset,
+        limit=page.limit,
+    )
+
+
+def _run_page_response(page: EvaluationRunPage) -> EvaluationRunPageResponse:
+    return EvaluationRunPageResponse(
+        items=[_run_response(item) for item in page.items],
+        total=page.total,
+        completed=page.completed,
+        failed=page.failed,
         offset=page.offset,
         limit=page.limit,
     )
@@ -351,6 +379,18 @@ async def start_evaluation(
         session_factory=session_factory,
     )
     return _run_response(evaluation)
+
+
+@router.get("", response_model=EvaluationRunPageResponse)
+async def read_evaluation_runs(
+    session: DatabaseSession,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=MAX_RUN_PAGE_SIZE)] = DEFAULT_RUN_PAGE_SIZE,
+) -> EvaluationRunPageResponse:
+    """Return the persisted evaluation archive, newest run first."""
+    return _run_page_response(
+        await list_evaluation_runs(session, offset=offset, limit=limit)
+    )
 
 
 @router.get("/{evaluation_id}", response_model=EvaluationRunResponse)

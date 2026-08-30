@@ -1,6 +1,5 @@
 """Provider dispatch for non-streaming, one-shot playground prompts."""
 
-import os
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
@@ -9,7 +8,8 @@ from urllib.parse import quote
 import httpx
 
 from ..models import ModelConfiguration
-from ..schemas.models import validate_provider_settings
+from ..schemas.providers import validate_provider_settings
+from .credentials import CredentialConfigurationError, decrypt_api_key
 
 REQUEST_TIMEOUT_SECONDS = 120.0
 DEFAULT_BASE_URLS = {
@@ -52,7 +52,7 @@ async def generate_prompt(
     client: httpx.AsyncClient | None = None,
 ) -> PlaygroundResult:
     """Execute a prompt through the adapter selected by the stored provider."""
-    provider = model.provider
+    provider = model.provider.kind
     if provider == "custom":
         raise PlaygroundConfigurationError(
             "Custom endpoints do not define an executable protocol."
@@ -108,7 +108,7 @@ async def _request_provider(
     prompt: str,
     system_prompt: str | None,
 ) -> dict[str, Any]:
-    provider = model.provider
+    provider = model.provider.kind
     credential = _resolve_credential(model)
     headers = {"Content-Type": "application/json"}
 
@@ -180,32 +180,39 @@ async def _request_provider(
 
 def _resolve_credential(model: ModelConfiguration) -> str | None:
     try:
-        validate_provider_settings(
-            model.provider, model.base_url, model.api_key_env_var
-        )
+        validate_provider_settings(model.provider.kind, model.provider.base_url, None)
     except ValueError as exc:
         raise PlaygroundConfigurationError(str(exc)) from exc
-    credential_name = model.api_key_env_var
-    credential = os.getenv(credential_name) if credential_name else None
-    if credential_name and not credential:
-        raise PlaygroundConfigurationError(
-            f"Credential environment variable {credential_name} is not set."
+    ciphertext = model.provider.api_key_ciphertext
+    try:
+        credential = (
+            decrypt_api_key(
+                ciphertext,
+                provider_id=model.provider.id,
+                provider_kind=model.provider.kind,
+            )
+            if ciphertext
+            else None
         )
-    if model.provider in {"openai", "anthropic", "gemini"} and not credential:
+    except CredentialConfigurationError as exc:
         raise PlaygroundConfigurationError(
-            f"The {model.provider} provider requires configured credentials."
+            "Stored provider credential is unavailable."
+        ) from exc
+    if model.provider.kind in {"openai", "anthropic", "gemini"} and not credential:
+        raise PlaygroundConfigurationError(
+            f"The {model.provider.kind} provider requires configured credentials."
         )
     return credential
 
 
 def _base_url(model: ModelConfiguration) -> str:
-    if model.base_url:
-        return model.base_url
-    if model.provider == "openai_compatible":
+    if model.provider.base_url:
+        return model.provider.base_url
+    if model.provider.kind == "openai_compatible":
         raise PlaygroundConfigurationError(
             "OpenAI-compatible models require a base URL."
         )
-    base_url = DEFAULT_BASE_URLS.get(model.provider)
+    base_url = DEFAULT_BASE_URLS.get(model.provider.kind)
     if base_url is None:
         raise PlaygroundConfigurationError("This provider requires a base URL.")
     return base_url

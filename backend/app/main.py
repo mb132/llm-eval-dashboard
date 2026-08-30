@@ -14,13 +14,16 @@ from .api.evaluations import router as evaluations_router
 from .api.models import router as models_router
 from .api.playground import router as playground_router
 from .api.prompts import router as prompts_router
+from .api.providers import router as providers_router
 from .database import SessionFactory
+from .services.credentials import validate_master_key
 from .services.evaluation_execution import fail_interrupted_runs
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     """Reconcile work interrupted by a previous local server process."""
+    validate_master_key()
     await fail_interrupted_runs(application.state.evaluation_session_factory)
     yield
 
@@ -30,6 +33,7 @@ app.state.evaluation_session_factory = SessionFactory
 app.include_router(datasets_router)
 app.include_router(evaluations_router)
 app.include_router(models_router)
+app.include_router(providers_router)
 app.include_router(playground_router)
 app.include_router(prompts_router)
 

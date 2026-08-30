@@ -5,9 +5,11 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.functions import count as sql_count
 
 from ..models import Dataset, ModelConfiguration, Prompt, PromptVersion, TestCase
+from .model_service import unavailable_reason
 
 MAX_SELECTED_MODELS = 10
 MAX_SELECTED_PROMPT_VERSIONS = 20
@@ -84,21 +86,20 @@ async def get_evaluation_model_options(
     """Return active persisted models with a supported execution protocol."""
     statement = (
         select(ModelConfiguration)
-        .where(
-            ModelConfiguration.active.is_(True),
-            ModelConfiguration.provider != "custom",
-        )
+        .options(selectinload(ModelConfiguration.provider))
+        .where(ModelConfiguration.active.is_(True))
         .order_by(ModelConfiguration.display_name.asc(), ModelConfiguration.id.asc())
     )
     configured_models = list(await session.scalars(statement))
     return [
         ModelOption(
             id=str(model.id),
-            provider=model.provider,
+            provider=model.provider.kind,
             name=model.display_name,
             model_name=model.model_name,
         )
         for model in configured_models
+        if unavailable_reason(model) is None
     ]
 
 

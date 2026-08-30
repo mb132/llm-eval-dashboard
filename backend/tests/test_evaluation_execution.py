@@ -126,6 +126,34 @@ def test_start_persists_complete_immutable_request_plan(
     )
 
 
+def test_evaluation_archive_lists_newest_runs_with_health_summary(
+    prompt_client: TestClient,
+    monkeypatch,
+) -> None:
+    """Expose every saved run through a bounded newest-first archive."""
+    disable_background_execution(monkeypatch)
+    version_id, dataset_id = create_inputs(prompt_client, second_case=False)
+    first = prompt_client.post(
+        "/api/evaluations", json=configuration(version_id, dataset_id)
+    ).json()
+    second = prompt_client.post(
+        "/api/evaluations", json=configuration(version_id, dataset_id)
+    ).json()
+
+    response = prompt_client.get("/api/evaluations?offset=0&limit=1")
+
+    assert response.status_code == 200
+    archive = response.json()
+    assert archive["total"] == 2
+    assert archive["completed"] == 0
+    assert archive["failed"] == 0
+    assert archive["offset"] == 0
+    assert archive["limit"] == 1
+    assert [item["id"] for item in archive["items"]] == [second["id"]]
+    assert first["id"] != second["id"]
+    assert prompt_client.get("/api/evaluations?limit=101").status_code == 422
+
+
 def test_execution_completes_with_individual_provider_failure(
     prompt_client: TestClient,
     evaluation_session_factory: async_sessionmaker[AsyncSession],

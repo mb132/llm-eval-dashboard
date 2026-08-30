@@ -29,11 +29,11 @@ export function PlaygroundPage() {
   const [running, setRunning] = useState(false)
 
   const runnableModels = useMemo(
-    () => models.filter((model) => model.active && model.provider !== "custom"),
+    () => models.filter((model) => model.active && (model.provider as any).kind !== "custom"),
     [models],
   )
   const customModelCount = models.filter(
-    (model) => model.active && model.provider === "custom",
+    (model) => model.active && (model.provider as any).kind === "custom",
   ).length
   const selectedModel = runnableModels.find(
     (model) => String(model.id) === selectedModelId,
@@ -46,7 +46,7 @@ export function PlaygroundPage() {
       const configuredModels = await listModels()
       setModels(configuredModels)
       const firstAvailable = configuredModels.find(
-        (model) => model.active && model.provider !== "custom" && !unavailableReason(model),
+        (model) => model.active && (model.provider as any).kind !== "custom" && !unavailableReason(model),
       )
       setSelectedModelId(firstAvailable ? String(firstAvailable.id) : "")
     } catch (caughtError) {
@@ -165,7 +165,7 @@ export function PlaygroundPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-5">
               <p className="text-xs text-muted-foreground">
                 {selectedModel
-                  ? `${PROVIDER_LABELS[selectedModel.provider]} · ${selectedModel.model_name}`
+                  ? `${PROVIDER_LABELS[(selectedModel.provider as any).kind as Provider]} · ${selectedModel.model_name}`
                   : "Choose an available model to run the prompt."}
               </p>
               <Button type="submit" disabled={running || selectionUnavailable || !prompt.trim()}>
@@ -248,9 +248,9 @@ function ErrorBanner({ message }: { message: string }) {
 }
 
 function unavailableReason(model: ModelConfiguration): string | null {
-  if (model.provider === "openai_compatible" && !model.base_url) return "Base URL required"
-  const credentialsRequired = ["openai", "anthropic", "gemini"].includes(model.provider)
-  if ((credentialsRequired || model.api_key_env_var) && !model.has_credentials) {
+  const provider = model.provider as any
+  if (provider.kind === "openai_compatible" && !provider.base_url) return "Base URL required"
+  if (provider.api_key_requirement === "required" && !provider.has_api_key) {
     return "Credentials unavailable"
   }
   return null

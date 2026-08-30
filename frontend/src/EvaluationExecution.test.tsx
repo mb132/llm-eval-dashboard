@@ -72,6 +72,7 @@ const result: EvaluationResult = {
   test_case_id: "f0d638d3-3545-4890-be30-8f026fc967a2",
   repetition: 1,
   max_output_tokens: 1024,
+  rendered_prompt: "Answer exactly: Capital of France?",
   test_input: "Capital of France?",
   expected_output: "Paris",
   generated_output: "Paris",
@@ -111,6 +112,16 @@ describe("evaluation execution", () => {
     const user = userEvent.setup()
     fetchMock
       .mockResolvedValueOnce(jsonResponse(options))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          items: [],
+          total: 0,
+          completed: 0,
+          failed: 0,
+          offset: 0,
+          limit: 20,
+        }),
+      )
       .mockResolvedValueOnce(jsonResponse(preview))
       .mockResolvedValueOnce(jsonResponse({ ...completedRun, status: "pending" }, 202))
       .mockResolvedValueOnce(jsonResponse(completedRun))
@@ -127,7 +138,7 @@ describe("evaluation execution", () => {
     expect(
       await screen.findByRole("heading", { name: "Evaluation run" }),
     ).toBeInTheDocument()
-    const startCall = fetchMock.mock.calls[2]
+    const startCall = fetchMock.mock.calls[3]
     expect(String(startCall[0])).toBe("/api/evaluations")
     expect(JSON.parse(String(startCall[1]?.body))).toEqual({
       model_ids: ["1"],
@@ -198,6 +209,7 @@ describe("evaluation execution", () => {
     expect(await screen.findByText(unsafe)).toBeInTheDocument()
     expect(container.querySelector("img")).toBeNull()
     expect(screen.getByText("Unavailable")).toBeInTheDocument()
+    expect(screen.getByText("Answer exactly: Capital of France?")).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Load more results" }))
     await waitFor(() => expect(screen.getByText("2 + 2?")).toBeInTheDocument())
   })

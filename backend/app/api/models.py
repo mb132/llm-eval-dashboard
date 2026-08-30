@@ -37,6 +37,8 @@ async def create_model_configuration(
 ) -> ModelConfigurationResponse:
     """Create a model configuration."""
     model = await model_service.create_model(session, payload)
+    if model is None:
+        raise HTTPException(status_code=422, detail="Provider configuration not found.")
     return model_service.to_response(model)
 
 
@@ -62,6 +64,8 @@ async def update_model_configuration(
         updated_model = await model_service.update_model(session, model, payload)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if updated_model is None:
+        raise HTTPException(status_code=422, detail="Provider configuration not found.")
     return model_service.to_response(updated_model)
 
 

@@ -1,6 +1,8 @@
 """Shared backend test fixtures."""
 
 import asyncio
+import base64
+import os
 from collections.abc import Iterator
 
 import pytest
@@ -10,6 +12,8 @@ from app.models import Base
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
+
+os.environ.setdefault("LLM_EVAL_MASTER_KEY", base64.urlsafe_b64encode(b"t" * 32).decode())
 
 
 @pytest.fixture

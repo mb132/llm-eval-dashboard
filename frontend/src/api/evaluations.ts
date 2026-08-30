@@ -83,6 +83,7 @@ export type EvaluationResult = {
   test_case_id: string
   repetition: number
   max_output_tokens: number
+  rendered_prompt: string
   test_input: string
   expected_output: string
   generated_output: string | null
@@ -93,6 +94,15 @@ export type EvaluationResult = {
   output_tokens: number | null
   started_at: string | null
   completed_at: string | null
+}
+
+export type EvaluationRunPage = {
+  items: EvaluationRun[]
+  total: number
+  completed: number
+  failed: number
+  offset: number
+  limit: number
 }
 
 export type EvaluationResultPage = {
@@ -160,6 +170,17 @@ export function startEvaluation(
 
 export function getEvaluationRun(evaluationId: string): Promise<EvaluationRun> {
   return request<EvaluationRun>(`/api/evaluations/${evaluationId}`)
+}
+
+export function getPastEvaluations(
+  offset = 0,
+  limit = 20,
+): Promise<EvaluationRunPage> {
+  const query = new URLSearchParams({
+    offset: String(offset),
+    limit: String(limit),
+  })
+  return request<EvaluationRunPage>(`/api/evaluations?${query}`)
 }
 
 export function getEvaluationResults(

@@ -25,7 +25,7 @@ npm run dev
 # Backend — http://localhost:8000
 uv sync
 uv run alembic upgrade head
-uv run fastapi dev backend/app/main.py
+uv run uvicorn backend.app.main:app --reload --env-file .env
 ```
 
 During development, open the React application at <http://localhost:5173>;
@@ -135,12 +135,25 @@ the same Alembic-managed SQLite database (`./llm_eval.db` by default). Set
 `DATABASE_URL` to use another
 SQLite location.
 
-Provider credentials remain server-side. Copy `.env.example` to `.env`, set the
-required credential values, and enter only the provider's corresponding
-environment variable name (for example, `OPENAI_API_KEY`) in a model
-configuration. Secret values are never stored in SQLite or returned by the API.
-For safety, custom base URLs cannot use server credentials; OpenAI,
-Anthropic, and Gemini use their fixed official endpoints.
+Create named provider connections on the Models page, then link one or more
+models to each connection. Provider API keys are encrypted in SQLite and are
+write-only: they are never returned by the API or shown in the browser.
+
+Set `LLM_EVAL_MASTER_KEY` before starting the application. It must be a
+URL-safe base64 encoding of 32 random bytes; for example:
+
+```bash
+python -c "import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
+```
+
+Keep this value separate from SQLite backups. Losing or changing it makes
+stored provider credentials unrecoverable, requiring them to be entered again.
+This application has no authentication, so do not expose it publicly.
+
+OpenAI, Anthropic, and Gemini use fixed official endpoints and require a key.
+OpenAI-compatible endpoints require a base URL and may use a key; Ollama may
+also use one. Keys require HTTPS except for localhost or loopback URLs. Custom
+endpoints remain configuration-only and cannot store a key.
 
 ## Use the playground
 

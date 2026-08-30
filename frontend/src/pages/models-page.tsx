@@ -207,7 +207,7 @@ function ModelForm({ model, onCancel, onSaved }: { model: ModelConfiguration | n
   const [parametersText, setParametersText] = useState(() => JSON.stringify(model?.parameters ?? {}, null, 2))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const credentialEnvVar = CREDENTIAL_ENV_VAR_BY_PROVIDER[form.provider]
+  const credentialEnvVar = CREDENTIAL_ENV_VAR_BY_PROVIDER[form.provider ?? "ollama"]
 
   function changeProvider(provider: Provider) {
     const supportsCustomBaseUrl = PROVIDERS_WITH_CONFIGURABLE_BASE_URL.includes(provider)

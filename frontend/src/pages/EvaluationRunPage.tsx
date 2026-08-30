@@ -278,6 +278,7 @@ function ResultCard({ result }: { result: EvaluationResult }) {
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="grid gap-4 md:grid-cols-2">
+          <TextValue label="Rendered prompt" value={result.rendered_prompt} />
           <TextValue label="Input" value={result.test_input} />
           <TextValue label="Expected output" value={result.expected_output} />
         </div>
@@ -307,6 +308,7 @@ function ResultCard({ result }: { result: EvaluationResult }) {
           />
           <Metric label="Input tokens" value={formatMetric(result.input_tokens)} />
           <Metric label="Output tokens" value={formatMetric(result.output_tokens)} />
+          <Metric label="Max output tokens" value={result.max_output_tokens} />
         </dl>
       </CardContent>
     </Card>

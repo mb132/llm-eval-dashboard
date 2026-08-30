@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field, field_validator
 
-from .models import ProviderType
+from .providers import ProviderType
 
 
 class PlaygroundRequest(BaseModel):

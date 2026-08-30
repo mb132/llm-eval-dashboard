@@ -32,7 +32,7 @@ async def run_playground_prompt(
     return PlaygroundResponse(
         model_id=model.id or payload.model_id,
         display_name=model.display_name,
-        provider=model.provider,
+        provider=model.provider.kind,
         model_name=model.model_name,
         response=result.response,
         latency_ms=result.latency_ms,

@@ -55,6 +55,15 @@ function jsonResponse(body: unknown, status = 200) {
   })
 }
 
+const emptyArchive = {
+  items: [],
+  total: 0,
+  completed: 0,
+  failed: 0,
+  offset: 0,
+  limit: 20,
+}
+
 function renderEvaluation() {
   return render(
     <MemoryRouter initialEntries={["/"]}>
@@ -68,6 +77,7 @@ describe("evaluation configuration", () => {
 
   beforeEach(() => {
     fetchMock.mockReset()
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(emptyArchive)))
     vi.stubGlobal("fetch", fetchMock)
   })
 
@@ -75,6 +85,16 @@ describe("evaluation configuration", () => {
     const user = userEvent.setup()
     fetchMock
       .mockResolvedValueOnce(jsonResponse(options))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          items: [],
+          total: 0,
+          completed: 0,
+          failed: 0,
+          offset: 0,
+          limit: 20,
+        }),
+      )
       .mockResolvedValueOnce(jsonResponse(preview))
     renderEvaluation()
 
@@ -102,7 +122,7 @@ describe("evaluation configuration", () => {
     expect(screen.getByText("Total model requests").nextSibling).toHaveTextContent(
       "16",
     )
-    const previewCall = fetchMock.mock.calls[1]
+    const previewCall = fetchMock.mock.calls[2]
     expect(String(previewCall[0])).toBe("/api/evaluations/preview")
     expect(JSON.parse(String(previewCall[1]?.body))).toEqual({
       model_ids: ["model-a", "model-b"],

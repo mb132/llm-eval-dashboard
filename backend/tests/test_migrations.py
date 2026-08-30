@@ -33,6 +33,7 @@ def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
         "evaluation_results",
         "evaluation_runs",
         "model_configurations",
+        "provider_configurations",
         "prompt_versions",
         "prompts",
         "test_cases",
@@ -46,3 +47,4 @@ def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
     assert "test_cases" in table_names(database_path)
     assert "evaluation_results" in table_names(database_path)
     assert "model_configurations" in table_names(database_path)
+    assert "provider_configurations" in table_names(database_path)

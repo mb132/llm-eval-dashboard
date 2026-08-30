@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +20,7 @@ from ..models import (
     ModelConfiguration,
     Prompt,
     PromptVersion,
+    ProviderConfiguration,
 )
 from ..models.base import utc_now
 from .evaluation_configuration import (
@@ -45,6 +46,8 @@ MAX_CONCURRENT_MODEL_REQUESTS = 4
 MAX_ERROR_MESSAGE_LENGTH = 500
 DEFAULT_RESULT_PAGE_SIZE = 50
 MAX_RESULT_PAGE_SIZE = 100
+DEFAULT_RUN_PAGE_SIZE = 20
+MAX_RUN_PAGE_SIZE = 100
 
 type ProviderCall = Callable[..., Awaitable[OllamaResult]]
 
@@ -67,6 +70,18 @@ class ResultPage:
 
 
 @dataclass(frozen=True, slots=True)
+class EvaluationRunPage:
+    """One bounded page of persisted evaluation runs and archive totals."""
+
+    items: list[EvaluationRun]
+    total: int
+    completed: int
+    failed: int
+    offset: int
+    limit: int
+
+
+@dataclass(frozen=True, slots=True)
 class _ExecutionSnapshot:
     """Provider input detached from the database session."""
 
@@ -83,23 +98,23 @@ class _ModelConfigurationSnapshot:
 
     id: int
     display_name: str
-    provider: str
+    provider_id: int
+    provider_kind: str
+    provider_base_url: str | None
+    provider_api_key_ciphertext: str | None
     model_name: str
-    base_url: str | None
-    api_key_env_var: str | None
     parameters: dict[str, Any]
 
     @classmethod
-    def from_model(
-        cls, model: ModelConfiguration
-    ) -> "_ModelConfigurationSnapshot":
+    def from_model(cls, model: ModelConfiguration) -> "_ModelConfigurationSnapshot":
         return cls(
             id=model.id,
             display_name=model.display_name,
-            provider=model.provider,
+            provider_id=model.provider.id,
+            provider_kind=model.provider.kind,
+            provider_base_url=model.provider.base_url,
+            provider_api_key_ciphertext=model.provider.api_key_ciphertext,
             model_name=model.model_name,
-            base_url=model.base_url,
-            api_key_env_var=model.api_key_env_var,
             parameters=dict(model.parameters),
         )
 
@@ -107,12 +122,17 @@ class _ModelConfigurationSnapshot:
         return ModelConfiguration(
             id=self.id,
             display_name=self.display_name,
-            provider=self.provider,
+            provider_id=self.provider_id,
             model_name=self.model_name,
-            base_url=self.base_url,
-            api_key_env_var=self.api_key_env_var,
             parameters=dict(self.parameters),
             active=True,
+            provider=ProviderConfiguration(
+                id=self.provider_id,
+                display_name="snapshot",
+                kind=self.provider_kind,
+                base_url=self.provider_base_url,
+                api_key_ciphertext=self.provider_api_key_ciphertext,
+            ),
         )
 
 
@@ -212,6 +232,43 @@ async def get_evaluation_run(
     if evaluation is None:
         raise EvaluationRunNotFoundError("Evaluation not found.")
     return evaluation
+
+
+async def list_evaluation_runs(
+    session: AsyncSession,
+    *,
+    offset: int,
+    limit: int,
+) -> EvaluationRunPage:
+    """Return persisted runs newest first, with all-time status totals."""
+    totals = await session.execute(
+        select(
+            func.count(EvaluationRun.id),
+            func.coalesce(
+                func.sum(case((EvaluationRun.status == "completed", 1), else_=0)),
+                0,
+            ),
+            func.coalesce(
+                func.sum(case((EvaluationRun.status == "failed", 1), else_=0)),
+                0,
+            ),
+        )
+    )
+    total, completed, failed = totals.one()
+    statement = (
+        select(EvaluationRun)
+        .order_by(EvaluationRun.created_at.desc(), EvaluationRun.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return EvaluationRunPage(
+        items=list(await session.scalars(statement)),
+        total=total,
+        completed=completed,
+        failed=failed,
+        offset=offset,
+        limit=limit,
+    )
 
 
 async def list_evaluation_results(
@@ -325,9 +382,9 @@ async def _start_run(
         configured_models = (
             list(
                 await session.scalars(
-                    select(ModelConfiguration).where(
-                        ModelConfiguration.id.in_(configured_model_ids)
-                    )
+                    select(ModelConfiguration)
+                    .options(selectinload(ModelConfiguration.provider))
+                    .where(ModelConfiguration.id.in_(configured_model_ids))
                 )
             )
             if configured_model_ids
