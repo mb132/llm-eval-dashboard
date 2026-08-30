@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     JSON,
     CheckConstraint,
+    Float,
     ForeignKey,
     String,
     Text,
@@ -133,3 +134,42 @@ class EvaluationResult(Base):
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     evaluation: Mapped[EvaluationRun] = relationship(back_populates="results")
+    quality_scores: Mapped[list["EvaluationQualityScore"]] = relationship(
+        back_populates="result",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class EvaluationQualityScore(Base):
+    """One versioned quality metric assigned to an evaluation result."""
+
+    __tablename__ = "evaluation_quality_scores"
+    __table_args__ = (
+        UniqueConstraint(
+            "result_id",
+            "method",
+            "metric_version",
+            name="uq_quality_scores_result_method_version",
+        ),
+        CheckConstraint("metric_version >= 1", name="metric_version_positive"),
+        CheckConstraint(
+            "score IS NULL OR (score >= 0 AND score <= 1)",
+            name="score_valid",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    result_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("evaluation_results.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    method: Mapped[str] = mapped_column(String(50), nullable=False)
+    metric_version: Mapped[int] = mapped_column(nullable=False)
+    score: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=utc_now
+    )
+    result: Mapped[EvaluationResult] = relationship(back_populates="quality_scores")

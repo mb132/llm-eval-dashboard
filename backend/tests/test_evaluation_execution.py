@@ -14,6 +14,7 @@ from app.services.playground import PlaygroundResult
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 MODEL_ID = "1"
 
@@ -103,8 +104,10 @@ def test_start_persists_complete_immutable_request_plan(
 
     async def load_results() -> list[EvaluationResult]:
         async with evaluation_session_factory() as session:
-            statement = select(EvaluationResult).order_by(
-                EvaluationResult.sequence_number
+            statement = (
+                select(EvaluationResult)
+                .order_by(EvaluationResult.sequence_number)
+                .options(selectinload(EvaluationResult.quality_scores))
             )
             return list(await session.scalars(statement))
 
@@ -119,6 +122,13 @@ def test_start_persists_complete_immutable_request_plan(
     assert stored[0].model_base_url == "http://localhost:11434"
     assert stored[0].model_api_key_env_var is None
     assert stored[0].model_parameters == {}
+    assert {
+        (score.method, score.metric_version, score.score)
+        for score in stored[0].quality_scores
+    } == {
+        ("normalized_exact_match", 1, None),
+        ("normalized_contains_match", 1, None),
+    }
 
     first_page = prompt_client.get(f"/api/evaluations/{run['id']}/results?limit=1")
     assert first_page.status_code == 200
@@ -148,7 +158,7 @@ def test_execution_completes_with_individual_provider_failure(
             raise OllamaError("Synthetic provider failure.", code="synthetic")
         return OllamaResult(
             model=model,
-            response="Paris",
+            response="The answer is PARIS.",
             latency_ms=12,
             input_tokens=None,
             output_tokens=1,
@@ -171,10 +181,35 @@ def test_execution_completes_with_individual_provider_failure(
     assert persisted["failed_requests"] == 1
     results = prompt_client.get(f"/api/evaluations/{run['id']}/results").json()["items"]
     assert [item["status"] for item in results] == ["succeeded", "failed"]
-    assert results[0]["generated_output"] == "Paris"
+    assert results[0]["generated_output"] == "The answer is PARIS."
     assert results[0]["input_tokens"] is None
+    assert {item["method"]: item["score"] for item in results[0]["quality_scores"]} == {
+        "normalized_exact_match": 0.0,
+        "normalized_contains_match": 1.0,
+    }
+    assert all(item["score"] is None for item in results[1]["quality_scores"])
     assert results[1]["error_code"] == "synthetic"
     assert results[1]["error_message"] == "Synthetic provider failure."
+
+    summary = prompt_client.get(f"/api/evaluations/{run['id']}/quality-summary").json()
+    assert [metric["method"] for metric in summary["metrics"]] == [
+        "normalized_exact_match",
+        "normalized_contains_match",
+    ]
+    exact, contains = summary["metrics"]
+    assert exact["overall"] == {
+        "average_score": 0.0,
+        "scored_results": 1,
+        "unavailable_results": 1,
+    }
+    assert contains["overall"] == {
+        "average_score": 1.0,
+        "scored_results": 1,
+        "unavailable_results": 1,
+    }
+    assert exact["by_model"][0]["model_name"] == "Local model"
+    assert exact["by_model"][0]["scored_results"] == 1
+    assert exact["by_prompt_version"][0]["prompt_name"] == "Execution prompt"
 
 
 def test_execution_uses_the_persisted_model_configuration(
@@ -242,6 +277,63 @@ def test_execution_uses_the_persisted_model_configuration(
     assert results["items"][0]["status"] == "succeeded"
     assert results["items"][0]["generated_output"] == "Paris"
     assert results["items"][0]["reported_model_name"] == "test-model:latest"
+
+
+def test_quality_scores_group_by_model_and_prompt_version(
+    prompt_client: TestClient,
+    evaluation_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Aggregate compatible samples independently across both dimensions."""
+    disable_background_execution(monkeypatch)
+    first_version_id, dataset_id = create_inputs(prompt_client, second_case=False)
+    prompt_id = prompt_client.get("/api/prompts").json()[0]["id"]
+    second_version = prompt_client.post(
+        f"/api/prompts/{prompt_id}/versions",
+        json={"content": "Reply with only this answer: {{input}}"},
+    ).json()
+    second_model = prompt_client.post(
+        "/api/models",
+        json={
+            "display_name": "Second local model",
+            "provider": "ollama",
+            "model_name": "second-model:latest",
+        },
+    ).json()
+    run = prompt_client.post(
+        "/api/evaluations",
+        json={
+            "model_ids": [MODEL_ID, str(second_model["id"])],
+            "prompt_version_ids": [first_version_id, second_version["id"]],
+            "dataset_id": dataset_id,
+            "repetitions": 1,
+        },
+    ).json()
+
+    async def fake_provider(prompt: str, model: str, **kwargs) -> OllamaResult:
+        return OllamaResult(
+            model=model,
+            response="Paris",
+            latency_ms=5,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+    asyncio.run(
+        execute_evaluation_run(
+            UUID(run["id"]),
+            session_factory=evaluation_session_factory,
+            provider_call=fake_provider,
+            semaphore=asyncio.Semaphore(2),
+        )
+    )
+
+    summary = prompt_client.get(f"/api/evaluations/{run['id']}/quality-summary").json()
+    exact = summary["metrics"][0]
+    assert len(exact["by_model"]) == 2
+    assert len(exact["by_prompt_version"]) == 2
+    assert {item["scored_results"] for item in exact["by_model"]} == {2}
+    assert {item["scored_results"] for item in exact["by_prompt_version"]} == {2}
 
 
 def test_start_rejects_invalid_legacy_model_parameters(
@@ -353,4 +445,8 @@ def test_execution_endpoints_return_not_found(prompt_client: TestClient) -> None
     assert prompt_client.get(f"/api/evaluations/{missing_id}").status_code == 404
     assert (
         prompt_client.get(f"/api/evaluations/{missing_id}/results").status_code == 404
+    )
+    assert (
+        prompt_client.get(f"/api/evaluations/{missing_id}/quality-summary").status_code
+        == 404
     )

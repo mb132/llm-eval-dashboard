@@ -56,8 +56,11 @@ local single-process worker. Each request stores the effective model
 configuration before execution and limits generated output to at most 1,024
 tokens. Later model edits therefore do not rewrite a run. A server restart marks
 unfinished work as failed instead of replaying requests whose provider-side
-outcome is unknown. Quality scores and cost estimates are intentionally added by
-later features.
+outcome is unknown. Successful responses receive versioned normalized exact and
+contains-match scores. Matching normalizes Unicode, casing, and whitespace but
+keeps punctuation significant. Failed requests remain unavailable and do not
+lower quality averages. These deterministic metrics do not recognize arbitrary
+paraphrases or prove correctness. Cost estimates are added by a later feature.
 
 The application has no authentication or tenant isolation and is intended for
 trusted local/demo use only. Do not expose it publicly or store confidential

@@ -33,8 +33,21 @@ from ..services.evaluation_execution import (
     get_evaluation_run,
     list_evaluation_results,
 )
+from ..services.quality import (
+    QUALITY_METRICS,
+    ModelQualityAggregate,
+    PromptQualityAggregate,
+    QualityAggregate,
+    QualityEvaluationNotFoundError,
+    QualityMetricSummary,
+    get_quality_summary,
+)
 
 router = APIRouter(prefix="/api/evaluations", tags=["evaluations"])
+QUALITY_METRIC_ORDER = {
+    (metric.method, metric.version): index
+    for index, metric in enumerate(QUALITY_METRICS)
+}
 DatabaseSession = Annotated[AsyncSession, Depends(get_session)]
 EvaluationSessionFactory = Annotated[
     async_sessionmaker[AsyncSession], Depends(get_session_factory)
@@ -174,6 +187,7 @@ class EvaluationResultResponse(BaseModel):
     latency_ms: int | None
     input_tokens: int | None
     output_tokens: int | None
+    quality_scores: list["QualityScoreResponse"]
     started_at: datetime | None
     completed_at: datetime | None
 
@@ -185,6 +199,53 @@ class EvaluationResultPageResponse(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class QualityScoreResponse(BaseModel):
+    """One versioned score, or null when the request could not be scored."""
+
+    method: str
+    version: int
+    score: float | None
+
+
+class QualityAggregateResponse(BaseModel):
+    """One average with explicit scored and unavailable sample counts."""
+
+    average_score: float | None
+    scored_results: int
+    unavailable_results: int
+
+
+class ModelQualityAggregateResponse(QualityAggregateResponse):
+    """Quality values grouped by model."""
+
+    model_id: str
+    model_name: str
+
+
+class PromptQualityAggregateResponse(QualityAggregateResponse):
+    """Quality values grouped by immutable prompt version."""
+
+    prompt_version_id: UUID
+    prompt_name: str
+    prompt_version_number: int
+
+
+class QualityMetricSummaryResponse(BaseModel):
+    """Overall and grouped aggregations for one metric version."""
+
+    method: str
+    version: int
+    overall: QualityAggregateResponse
+    by_model: list[ModelQualityAggregateResponse]
+    by_prompt_version: list[PromptQualityAggregateResponse]
+
+
+class EvaluationQualitySummaryResponse(BaseModel):
+    """All deterministic quality metrics for an evaluation."""
+
+    metrics: list[QualityMetricSummaryResponse]
 
 
 def _options_response(options: EvaluationOptions) -> EvaluationOptionsResponse:
@@ -275,6 +336,19 @@ def _result_response(result: EvaluationResult) -> EvaluationResultResponse:
         latency_ms=result.latency_ms,
         input_tokens=result.input_tokens,
         output_tokens=result.output_tokens,
+        quality_scores=[
+            QualityScoreResponse(
+                method=item.method,
+                version=item.metric_version,
+                score=item.score,
+            )
+            for item in sorted(
+                result.quality_scores,
+                key=lambda item: QUALITY_METRIC_ORDER.get(
+                    (item.method, item.metric_version), len(QUALITY_METRIC_ORDER)
+                ),
+            )
+        ],
         started_at=result.started_at,
         completed_at=result.completed_at,
     )
@@ -289,8 +363,64 @@ def _result_page_response(page: ResultPage) -> EvaluationResultPageResponse:
     )
 
 
+def _aggregate_response(aggregate: QualityAggregate) -> QualityAggregateResponse:
+    return QualityAggregateResponse(
+        average_score=aggregate.average_score,
+        scored_results=aggregate.scored_results,
+        unavailable_results=aggregate.unavailable_results,
+    )
+
+
+def _model_aggregate_response(
+    item: ModelQualityAggregate,
+) -> ModelQualityAggregateResponse:
+    return ModelQualityAggregateResponse(
+        model_id=item.model_id,
+        model_name=item.model_name,
+        **_aggregate_response(item.aggregate).model_dump(),
+    )
+
+
+def _prompt_aggregate_response(
+    item: PromptQualityAggregate,
+) -> PromptQualityAggregateResponse:
+    return PromptQualityAggregateResponse(
+        prompt_version_id=item.prompt_version_id,
+        prompt_name=item.prompt_name,
+        prompt_version_number=item.prompt_version_number,
+        **_aggregate_response(item.aggregate).model_dump(),
+    )
+
+
+def _quality_summary_response(
+    metrics: list[QualityMetricSummary],
+) -> EvaluationQualitySummaryResponse:
+    return EvaluationQualitySummaryResponse(
+        metrics=[
+            QualityMetricSummaryResponse(
+                method=metric.method,
+                version=metric.version,
+                overall=_aggregate_response(metric.overall),
+                by_model=[_model_aggregate_response(item) for item in metric.by_model],
+                by_prompt_version=[
+                    _prompt_aggregate_response(item)
+                    for item in metric.by_prompt_version
+                ],
+            )
+            for metric in metrics
+        ]
+    )
+
+
 def _raise_evaluation_error(exc: Exception) -> NoReturn:
-    if isinstance(exc, (EvaluationDatasetNotFoundError, EvaluationRunNotFoundError)):
+    if isinstance(
+        exc,
+        (
+            EvaluationDatasetNotFoundError,
+            EvaluationRunNotFoundError,
+            QualityEvaluationNotFoundError,
+        ),
+    ):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, EvaluationConfigurationError):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -364,6 +494,22 @@ async def read_evaluation_run(
     except EvaluationRunNotFoundError as exc:
         _raise_evaluation_error(exc)
     return _run_response(evaluation)
+
+
+@router.get(
+    "/{evaluation_id}/quality-summary",
+    response_model=EvaluationQualitySummaryResponse,
+)
+async def read_evaluation_quality_summary(
+    evaluation_id: UUID,
+    session: DatabaseSession,
+) -> EvaluationQualitySummaryResponse:
+    """Return quality aggregates with explicit sample counts."""
+    try:
+        metrics = await get_quality_summary(session, evaluation_id)
+    except QualityEvaluationNotFoundError as exc:
+        _raise_evaluation_error(exc)
+    return _quality_summary_response(metrics)
 
 
 @router.get(

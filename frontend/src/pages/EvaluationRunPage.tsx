@@ -13,7 +13,10 @@ import { Link, useParams } from "react-router-dom"
 import {
   getEvaluationResults,
   getEvaluationRun,
+  getEvaluationQualitySummary,
   type EvaluationResult,
+  type EvaluationQualitySummary,
+  type QualityAggregate,
   type EvaluationRun,
   type EvaluationRunStatus,
 } from "@/api/evaluations"
@@ -35,6 +38,8 @@ export function EvaluationRunPage() {
   const [evaluation, setEvaluation] = useState<EvaluationRun | null>(null)
   const [results, setResults] = useState<EvaluationResult[]>([])
   const [resultTotal, setResultTotal] = useState(0)
+  const [qualitySummary, setQualitySummary] =
+    useState<EvaluationQualitySummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,10 +61,15 @@ export function EvaluationRunPage() {
           getEvaluationRun(id),
           getEvaluationResults(id, 0, RESULT_PAGE_SIZE),
         ])
+        const quality =
+          run.status === "completed" || run.status === "failed"
+            ? await getEvaluationQualitySummary(id)
+            : null
         if (!active) return
         setEvaluation(run)
         setResults(page.items)
         setResultTotal(page.total)
+        if (quality) setQualitySummary(quality)
         setError(null)
         if (run.status === "pending" || run.status === "running") {
           timeoutId = window.setTimeout(poll, POLL_INTERVAL_MS)
@@ -186,14 +196,15 @@ export function EvaluationRunPage() {
         </CardContent>
       </Card>
 
+      {qualitySummary && <QualitySummary summary={qualitySummary} />}
+
       <section className="space-y-4" aria-labelledby="results-heading">
         <div>
           <h2 id="results-heading" className="text-2xl font-semibold">
             Individual results
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Raw outputs are shown here; quality scoring and costs follow in later
-            features.
+            Raw outputs and deterministic quality scores are shown together.
           </p>
         </div>
         {error && (
@@ -308,6 +319,26 @@ function ResultCard({ result }: { result: EvaluationResult }) {
           <Metric label="Input tokens" value={formatMetric(result.input_tokens)} />
           <Metric label="Output tokens" value={formatMetric(result.output_tokens)} />
         </dl>
+        <div className="border-t pt-4">
+          <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Quality
+          </h4>
+          {result.quality_scores.length === 0 ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Quality scores unavailable for this historical result.
+            </p>
+          ) : (
+            <dl className="mt-2 grid gap-3 sm:grid-cols-2">
+              {result.quality_scores.map((quality) => (
+                <Metric
+                  key={`${quality.method}-${quality.version}`}
+                  label={`${qualityMetricLabel(quality.method)} v${quality.version}`}
+                  value={formatQualityScore(quality.score)}
+                />
+              ))}
+            </dl>
+          )}
+        </div>
       </CardContent>
     </Card>
   )
@@ -388,4 +419,116 @@ function ErrorMessage({ message }: { message: string }) {
 
 function formatMetric(value: number | null) {
   return value === null ? "Unavailable" : value.toLocaleString()
+}
+
+function QualitySummary({ summary }: { summary: EvaluationQualitySummary }) {
+  return (
+    <section className="space-y-4" aria-labelledby="quality-heading">
+      <div>
+        <h2 id="quality-heading" className="text-2xl font-semibold">
+          Response quality
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Deterministic normalized matching. Pending and failed requests are
+          excluded from averages and shown as unavailable.
+        </p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {summary.metrics.map((metric) => (
+          <Card key={`${metric.method}-${metric.version}`} className="shadow-sm">
+            <CardHeader>
+              <CardTitle>
+                <h3>{qualityMetricLabel(metric.method)}</h3>
+              </CardTitle>
+              <CardDescription>Metric version {metric.version}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div>
+                <p className="text-3xl font-semibold">
+                  {formatQualityScore(metric.overall.average_score)}
+                </p>
+                <SampleCounts aggregate={metric.overall} />
+              </div>
+              <QualityBreakdown
+                title="By model"
+                rows={metric.by_model.map((item) => ({
+                  key: item.model_id,
+                  label: item.model_name,
+                  aggregate: item,
+                }))}
+              />
+              <QualityBreakdown
+                title="By prompt version"
+                rows={metric.by_prompt_version.map((item) => ({
+                  key: item.prompt_version_id,
+                  label: `${item.prompt_name} · Version ${item.prompt_version_number}`,
+                  aggregate: item,
+                }))}
+              />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function QualityBreakdown({
+  title,
+  rows,
+}: {
+  title: string
+  rows: Array<{ key: string; label: string; aggregate: QualityAggregate }>
+}) {
+  return (
+    <div>
+      <h4 className="text-sm font-medium">{title}</h4>
+      <dl className="mt-2 space-y-2">
+        {rows.map((row) => (
+          <div
+            key={row.key}
+            className="flex items-start justify-between gap-4 rounded-lg bg-muted p-3"
+          >
+            <dt className="text-sm">{row.label}</dt>
+            <dd className="text-right text-sm font-semibold">
+              {formatQualityScore(row.aggregate.average_score)}
+              <SampleCounts aggregate={row.aggregate} compact />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+function SampleCounts({
+  aggregate,
+  compact = false,
+}: {
+  aggregate: QualityAggregate
+  compact?: boolean
+}) {
+  return (
+    <span
+      className={`${compact ? "block" : "mt-1 block"} text-xs font-normal text-muted-foreground`}
+    >
+      {aggregate.scored_results} scored · {aggregate.unavailable_results} unavailable
+    </span>
+  )
+}
+
+function qualityMetricLabel(method: string) {
+  const labels: Record<string, string> = {
+    normalized_exact_match: "Normalized exact match",
+    normalized_contains_match: "Normalized contains match",
+  }
+  return labels[method] ?? method
+}
+
+function formatQualityScore(value: number | null) {
+  if (value === null) return "Unavailable"
+  return new Intl.NumberFormat(undefined, {
+    style: "percent",
+    maximumFractionDigits: 1,
+  }).format(value)
 }

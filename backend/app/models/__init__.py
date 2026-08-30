@@ -2,7 +2,7 @@
 
 from .base import Base
 from .dataset import Dataset, TestCase
-from .evaluation import EvaluationResult, EvaluationRun
+from .evaluation import EvaluationQualityScore, EvaluationResult, EvaluationRun
 from .model_configuration import ModelConfiguration
 from .prompt import Prompt, PromptVersion
 
@@ -10,6 +10,7 @@ __all__ = [
     "Base",
     "Dataset",
     "EvaluationResult",
+    "EvaluationQualityScore",
     "EvaluationRun",
     "ModelConfiguration",
     "Prompt",

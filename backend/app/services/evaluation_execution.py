@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 from ..database import SessionFactory
 from ..models import (
     Dataset,
+    EvaluationQualityScore,
     EvaluationResult,
     EvaluationRun,
     ModelConfiguration,
@@ -41,6 +42,7 @@ from .playground import (
     generate_prompt,
 )
 from .prompts import INPUT_PLACEHOLDER
+from .quality import QUALITY_METRICS, score_response
 
 MAX_CONCURRENT_MODEL_REQUESTS = 4
 MAX_ERROR_MESSAGE_LENGTH = 500
@@ -209,29 +211,35 @@ async def create_evaluation_run(
                     INPUT_PLACEHOLDER, test_case.input
                 )
                 for repetition in range(1, repetitions + 1):
-                    evaluation.results.append(
-                        EvaluationResult(
-                            sequence_number=sequence_number,
-                            status="pending",
-                            model_id=str(model.id),
-                            model_provider=model.provider,
-                            model_name=model.display_name,
-                            provider_model_name=model.model_name,
-                            model_base_url=model.base_url,
-                            model_api_key_env_var=model.api_key_env_var,
-                            model_parameters=dict(model.parameters),
-                            prompt_id=version.prompt_id,
-                            prompt_version_id=version.id,
-                            prompt_name=prompt_name,
-                            prompt_version_number=version.version_number,
-                            test_case_id=test_case.id,
-                            repetition=repetition,
-                            max_output_tokens=max_output_tokens_by_id[model_id],
-                            rendered_prompt=rendered_prompt,
-                            test_input=test_case.input,
-                            expected_output=test_case.expected_answer,
-                        )
+                    evaluation_result = EvaluationResult(
+                        sequence_number=sequence_number,
+                        status="pending",
+                        model_id=str(model.id),
+                        model_provider=model.provider,
+                        model_name=model.display_name,
+                        provider_model_name=model.model_name,
+                        model_base_url=model.base_url,
+                        model_api_key_env_var=model.api_key_env_var,
+                        model_parameters=dict(model.parameters),
+                        prompt_id=version.prompt_id,
+                        prompt_version_id=version.id,
+                        prompt_name=prompt_name,
+                        prompt_version_number=version.version_number,
+                        test_case_id=test_case.id,
+                        repetition=repetition,
+                        max_output_tokens=max_output_tokens_by_id[model_id],
+                        rendered_prompt=rendered_prompt,
+                        test_input=test_case.input,
+                        expected_output=test_case.expected_answer,
                     )
+                    evaluation_result.quality_scores.extend(
+                        EvaluationQualityScore(
+                            method=metric.method,
+                            metric_version=metric.version,
+                        )
+                        for metric in QUALITY_METRICS
+                    )
+                    evaluation.results.append(evaluation_result)
                     sequence_number += 1
 
     if sequence_number - 1 != preview.total_requests:
@@ -276,6 +284,7 @@ async def list_evaluation_results(
         select(EvaluationResult)
         .where(EvaluationResult.evaluation_id == evaluation_id)
         .order_by(EvaluationResult.sequence_number)
+        .options(selectinload(EvaluationResult.quality_scores))
         .offset(offset)
         .limit(limit)
     )
@@ -472,6 +481,24 @@ async def _store_result_success(
         result = await session.get(EvaluationResult, result_id)
         if result is None or result.status != "running":
             return
+        scores = list(
+            await session.scalars(
+                select(EvaluationQualityScore).where(
+                    EvaluationQualityScore.result_id == result_id
+                )
+            )
+        )
+        calculated_scores = score_response(
+            expected=result.expected_output,
+            generated=outcome.response,
+        )
+        stored_metrics = {
+            (score.method, score.metric_version): score for score in scores
+        }
+        if set(stored_metrics) != set(calculated_scores):
+            raise RuntimeError("Evaluation quality metric snapshots are incomplete.")
+        for metric, score_value in calculated_scores.items():
+            stored_metrics[metric].score = score_value
         result.status = "succeeded"
         result.reported_model_name = outcome.model
         result.generated_output = outcome.response

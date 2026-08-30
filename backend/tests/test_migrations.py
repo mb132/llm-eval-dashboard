@@ -38,6 +38,7 @@ def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
         "alembic_version",
         "datasets",
         "evaluation_results",
+        "evaluation_quality_scores",
         "evaluation_runs",
         "model_configurations",
         "prompt_versions",

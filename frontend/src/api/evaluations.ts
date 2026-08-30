@@ -52,6 +52,41 @@ export type EvaluationResultStatus =
   | "succeeded"
   | "failed"
 
+export type QualityScore = {
+  method: string
+  version: number
+  score: number | null
+}
+
+export type QualityAggregate = {
+  average_score: number | null
+  scored_results: number
+  unavailable_results: number
+}
+
+export type ModelQualityAggregate = QualityAggregate & {
+  model_id: string
+  model_name: string
+}
+
+export type PromptQualityAggregate = QualityAggregate & {
+  prompt_version_id: string
+  prompt_name: string
+  prompt_version_number: number
+}
+
+export type QualityMetricSummary = {
+  method: string
+  version: number
+  overall: QualityAggregate
+  by_model: ModelQualityAggregate[]
+  by_prompt_version: PromptQualityAggregate[]
+}
+
+export type EvaluationQualitySummary = {
+  metrics: QualityMetricSummary[]
+}
+
 export type EvaluationRun = {
   id: string
   status: EvaluationRunStatus
@@ -91,6 +126,7 @@ export type EvaluationResult = {
   latency_ms: number | null
   input_tokens: number | null
   output_tokens: number | null
+  quality_scores: QualityScore[]
   started_at: string | null
   completed_at: string | null
 }
@@ -173,5 +209,13 @@ export function getEvaluationResults(
   })
   return request<EvaluationResultPage>(
     `/api/evaluations/${evaluationId}/results?${query}`,
+  )
+}
+
+export function getEvaluationQualitySummary(
+  evaluationId: string,
+): Promise<EvaluationQualitySummary> {
+  return request<EvaluationQualitySummary>(
+    `/api/evaluations/${evaluationId}/quality-summary`,
   )
 }

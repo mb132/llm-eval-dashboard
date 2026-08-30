@@ -7,6 +7,7 @@ import App from "@/App"
 import type {
   EvaluationOptions,
   EvaluationPreview,
+  EvaluationQualitySummary,
   EvaluationResult,
   EvaluationRun,
 } from "@/api/evaluations"
@@ -57,6 +58,50 @@ const completedRun: EvaluationRun = {
   completed_at: "2026-08-23T10:00:02Z",
 }
 
+const qualitySummary: EvaluationQualitySummary = {
+  metrics: [
+    {
+      method: "normalized_exact_match",
+      version: 1,
+      overall: {
+        average_score: 1,
+        scored_results: 1,
+        unavailable_results: 0,
+      },
+      by_model: [
+        {
+          model_id: "1",
+          model_name: "Local model",
+          average_score: 1,
+          scored_results: 1,
+          unavailable_results: 0,
+        },
+      ],
+      by_prompt_version: [
+        {
+          prompt_version_id: VERSION_ID,
+          prompt_name: "Knowledge prompt",
+          prompt_version_number: 1,
+          average_score: 1,
+          scored_results: 1,
+          unavailable_results: 0,
+        },
+      ],
+    },
+    {
+      method: "normalized_contains_match",
+      version: 1,
+      overall: {
+        average_score: 1,
+        scored_results: 1,
+        unavailable_results: 0,
+      },
+      by_model: [],
+      by_prompt_version: [],
+    },
+  ],
+}
+
 const result: EvaluationResult = {
   id: "c84899a0-4956-464e-a364-ec93c7817bf3",
   sequence_number: 1,
@@ -80,6 +125,10 @@ const result: EvaluationResult = {
   latency_ms: 120,
   input_tokens: null,
   output_tokens: 1,
+  quality_scores: [
+    { method: "normalized_exact_match", version: 1, score: 1 },
+    { method: "normalized_contains_match", version: 1, score: 1 },
+  ],
   started_at: "2026-08-23T10:00:01Z",
   completed_at: "2026-08-23T10:00:02Z",
 }
@@ -117,6 +166,7 @@ describe("evaluation execution", () => {
       .mockResolvedValueOnce(
         jsonResponse({ items: [result], total: 1, offset: 0, limit: 50 }),
       )
+      .mockResolvedValueOnce(jsonResponse(qualitySummary))
     renderApp("/")
 
     await user.click(await screen.findByRole("checkbox", { name: /Version 1/ }))
@@ -156,6 +206,10 @@ describe("evaluation execution", () => {
               generated_output: null,
               latency_ms: null,
               output_tokens: null,
+              quality_scores: result.quality_scores.map((quality) => ({
+                ...quality,
+                score: null,
+              })),
             },
           ],
           total: 3,
@@ -190,6 +244,7 @@ describe("evaluation execution", () => {
       .mockResolvedValueOnce(
         jsonResponse({ items: [first], total: 2, offset: 0, limit: 50 }),
       )
+      .mockResolvedValueOnce(jsonResponse(qualitySummary))
       .mockResolvedValueOnce(
         jsonResponse({ items: [second], total: 2, offset: 1, limit: 50 }),
       )
@@ -197,6 +252,10 @@ describe("evaluation execution", () => {
 
     expect(await screen.findByText(unsafe)).toBeInTheDocument()
     expect(container.querySelector("img")).toBeNull()
+    expect(
+      screen.getAllByRole("heading", { name: "Normalized exact match" }),
+    ).toHaveLength(1)
+    expect(screen.getByText("Normalized exact match v1")).toBeInTheDocument()
     expect(screen.getByText("Unavailable")).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Load more results" }))
     await waitFor(() => expect(screen.getByText("2 + 2?")).toBeInTheDocument())
