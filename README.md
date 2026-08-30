@@ -12,7 +12,17 @@ ollama run gemma4:e4b
 
 ## Develop
 
-Run in two terminals:
+With [just](https://just.systems/) installed, set up the project and start both
+development servers from the repository root:
+
+```bash
+just setup
+just dev
+```
+
+Run `just --list` to see all available development, test, quality, migration,
+build, and Docker tasks. The equivalent underlying commands are shown below if
+you prefer to run the services in two terminals:
 
 ```bash
 # Frontend — http://localhost:5173
@@ -91,6 +101,9 @@ Run tests from the repository root. They work offline without Ollama or API
 credentials:
 
 ```bash
+just test
+
+# Equivalent individual commands
 uv run pytest                         # all backend tests
 npm --prefix frontend run test        # all frontend tests
 uv run pytest backend/tests/test_migrations.py  # migration tests only
@@ -102,6 +115,10 @@ Run checks from the repository root. The `--check` commands do not modify files;
 `ruff format` applies the Python formatting:
 
 ```bash
+just check
+just format
+
+# Equivalent individual commands
 uv run ruff check .                  # Python linting
 uv run ruff format --check .         # check Python formatting
 uv run ruff format .                 # apply Python formatting
