@@ -90,8 +90,24 @@ class EvaluationResult(Base):
             name="input_tokens_nonnegative",
         ),
         CheckConstraint(
+            "input_tokens IS NULL OR input_tokens <= 1000000000",
+            name="input_tokens_bounded",
+        ),
+        CheckConstraint(
             "output_tokens IS NULL OR output_tokens >= 0",
             name="output_tokens_nonnegative",
+        ),
+        CheckConstraint(
+            "output_tokens IS NULL OR output_tokens <= 1000000000",
+            name="output_tokens_bounded",
+        ),
+        CheckConstraint(
+            "total_tokens IS NULL OR total_tokens >= 0",
+            name="total_tokens_nonnegative",
+        ),
+        CheckConstraint(
+            "total_tokens IS NULL OR total_tokens <= 1000000000",
+            name="total_tokens_bounded",
         ),
     )
 
@@ -128,6 +144,7 @@ class EvaluationResult(Base):
     latency_ms: Mapped[int | None] = mapped_column()
     input_tokens: Mapped[int | None] = mapped_column()
     output_tokens: Mapped[int | None] = mapped_column()
+    total_tokens: Mapped[int | None] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), nullable=False, default=utc_now
     )

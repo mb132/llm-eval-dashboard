@@ -14,6 +14,8 @@ import {
   getEvaluationResults,
   getEvaluationRun,
   getEvaluationQualitySummary,
+  getEvaluationPerformanceSummary,
+  type EvaluationPerformanceSummary,
   type EvaluationResult,
   type EvaluationQualitySummary,
   type QualityAggregate,
@@ -40,6 +42,8 @@ export function EvaluationRunPage() {
   const [resultTotal, setResultTotal] = useState(0)
   const [qualitySummary, setQualitySummary] =
     useState<EvaluationQualitySummary | null>(null)
+  const [performanceSummary, setPerformanceSummary] =
+    useState<EvaluationPerformanceSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -61,15 +65,19 @@ export function EvaluationRunPage() {
           getEvaluationRun(id),
           getEvaluationResults(id, 0, RESULT_PAGE_SIZE),
         ])
-        const quality =
+        const [quality, performance] =
           run.status === "completed" || run.status === "failed"
-            ? await getEvaluationQualitySummary(id)
-            : null
+            ? await Promise.all([
+                getEvaluationQualitySummary(id),
+                getEvaluationPerformanceSummary(id),
+              ])
+            : [null, null]
         if (!active) return
         setEvaluation(run)
         setResults(page.items)
         setResultTotal(page.total)
         if (quality) setQualitySummary(quality)
+        if (performance) setPerformanceSummary(performance)
         setError(null)
         if (run.status === "pending" || run.status === "running") {
           timeoutId = window.setTimeout(poll, POLL_INTERVAL_MS)
@@ -197,6 +205,7 @@ export function EvaluationRunPage() {
       </Card>
 
       {qualitySummary && <QualitySummary summary={qualitySummary} />}
+      {performanceSummary && <PerformanceSummary summary={performanceSummary} />}
 
       <section className="space-y-4" aria-labelledby="results-heading">
         <div>
@@ -204,7 +213,7 @@ export function EvaluationRunPage() {
             Individual results
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Raw outputs and deterministic quality scores are shown together.
+            Raw outputs, execution metrics, and quality scores are shown together.
           </p>
         </div>
         {error && (
@@ -270,6 +279,62 @@ function StatusBadge({ status }: { status: EvaluationRunStatus }) {
   )
 }
 
+function PerformanceSummary({ summary }: { summary: EvaluationPerformanceSummary }) {
+  const latency = summary.latency
+  return (
+    <Card className="shadow-sm">
+      <CardHeader>
+        <CardTitle>
+          <h2>Performance</h2>
+        </CardTitle>
+        <CardDescription>
+          Full-response latency and normalized provider token usage. Missing values
+          are excluded from aggregates.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-6 lg:grid-cols-2">
+        <section aria-labelledby="latency-summary-heading">
+          <h3 id="latency-summary-heading" className="font-medium">
+            Latency
+          </h3>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+            <Metric label="Average" value={formatLatency(latency.average_ms)} />
+            <Metric label="Minimum" value={formatLatency(latency.minimum_ms)} />
+            <Metric label="Maximum" value={formatLatency(latency.maximum_ms)} />
+          </dl>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {formatAvailability(latency.recorded_results, latency.unavailable_results)}
+          </p>
+          <h4 className="mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Average by model
+          </h4>
+          <ul className="mt-2 space-y-2 text-sm">
+            {summary.latency_by_model.map((model) => (
+              <li key={model.model_id} className="flex justify-between gap-3">
+                <span>{model.model_name}</span>
+                <span className="text-right text-muted-foreground">
+                  {formatLatency(model.average_ms)} ·{" "}
+                  {formatAvailability(model.recorded_results, model.unavailable_results)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <section aria-labelledby="token-summary-heading">
+          <h3 id="token-summary-heading" className="font-medium">
+            Token usage
+          </h3>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+            <AggregateMetric label="Input" aggregate={summary.input_tokens} />
+            <AggregateMetric label="Output" aggregate={summary.output_tokens} />
+            <AggregateMetric label="Total" aggregate={summary.total_tokens} />
+          </dl>
+        </section>
+      </CardContent>
+    </Card>
+  )
+}
+
 function ResultCard({ result }: { result: EvaluationResult }) {
   return (
     <Card className="shadow-sm">
@@ -311,13 +376,14 @@ function ResultCard({ result }: { result: EvaluationResult }) {
         {result.status === "pending" && (
           <p className="text-sm text-muted-foreground">Waiting to be processed…</p>
         )}
-        <dl className="grid gap-3 border-t pt-4 sm:grid-cols-3">
+        <dl className="grid gap-3 border-t pt-4 sm:grid-cols-4">
           <Metric
             label="Latency"
             value={result.latency_ms === null ? "Unavailable" : `${result.latency_ms} ms`}
           />
           <Metric label="Input tokens" value={formatMetric(result.input_tokens)} />
           <Metric label="Output tokens" value={formatMetric(result.output_tokens)} />
+          <Metric label="Total tokens" value={formatMetric(result.total_tokens)} />
         </dl>
         <div className="border-t pt-4">
           <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -403,6 +469,34 @@ function Metric({ label, value }: { label: string; value: string | number }) {
       <dd className="mt-1 font-semibold">{value}</dd>
     </div>
   )
+}
+
+function AggregateMetric({
+  label,
+  aggregate,
+}: {
+  label: string
+  aggregate: EvaluationPerformanceSummary["input_tokens"]
+}) {
+  return (
+    <div className="rounded-lg bg-muted p-3">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-1 font-semibold">{formatMetric(aggregate.sum_tokens)}</dd>
+      <dd className="mt-1 text-xs text-muted-foreground">
+        {formatAvailability(aggregate.recorded_results, aggregate.unavailable_results)}
+      </dd>
+    </div>
+  )
+}
+
+function formatLatency(value: number | null): string {
+  return value === null
+    ? "Unavailable"
+    : `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ms`
+}
+
+function formatAvailability(recorded: number, unavailable: number): string {
+  return `${recorded} recorded · ${unavailable} unavailable`
 }
 
 function ErrorMessage({ message }: { message: string }) {

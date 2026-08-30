@@ -60,7 +60,12 @@ outcome is unknown. Successful responses receive versioned normalized exact and
 contains-match scores. Matching normalizes Unicode, casing, and whitespace but
 keeps punctuation significant. Failed requests remain unavailable and do not
 lower quality averages. These deterministic metrics do not recognize arbitrary
-paraphrases or prove correctness. Cost estimates are added by a later feature.
+paraphrases or prove correctness. The results page also reports full-response
+latency in milliseconds and normalized provider token usage. Total tokens use the
+provider value where available, otherwise the input/output sum. Aggregates
+exclude unavailable values and show their sample counts; missing provider usage
+remains unavailable rather than becoming zero. Cost estimates are added by a
+later feature.
 
 The application has no authentication or tenant isolation and is intended for
 trusted local/demo use only. Do not expose it publicly or store confidential

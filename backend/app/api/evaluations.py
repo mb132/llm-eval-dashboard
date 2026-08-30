@@ -33,6 +33,14 @@ from ..services.evaluation_execution import (
     get_evaluation_run,
     list_evaluation_results,
 )
+from ..services.performance import (
+    LatencyAggregate,
+    ModelLatencyAggregate,
+    PerformanceEvaluationNotFoundError,
+    PerformanceSummary,
+    TokenAggregate,
+    get_performance_summary,
+)
 from ..services.quality import (
     QUALITY_METRICS,
     ModelQualityAggregate,
@@ -187,6 +195,7 @@ class EvaluationResultResponse(BaseModel):
     latency_ms: int | None
     input_tokens: int | None
     output_tokens: int | None
+    total_tokens: int | None
     quality_scores: list["QualityScoreResponse"]
     started_at: datetime | None
     completed_at: datetime | None
@@ -246,6 +255,41 @@ class EvaluationQualitySummaryResponse(BaseModel):
     """All deterministic quality metrics for an evaluation."""
 
     metrics: list[QualityMetricSummaryResponse]
+
+
+class LatencyAggregateResponse(BaseModel):
+    """Full-response latency with explicit sample counts."""
+
+    average_ms: float | None
+    minimum_ms: int | None
+    maximum_ms: int | None
+    recorded_results: int
+    unavailable_results: int
+
+
+class ModelLatencyAggregateResponse(LatencyAggregateResponse):
+    """Latency values grouped by immutable model selection."""
+
+    model_id: str
+    model_name: str
+
+
+class TokenAggregateResponse(BaseModel):
+    """One token sum with explicit sample counts."""
+
+    sum_tokens: int | None
+    recorded_results: int
+    unavailable_results: int
+
+
+class PerformanceSummaryResponse(BaseModel):
+    """Persisted latency and token usage for an evaluation."""
+
+    latency: LatencyAggregateResponse
+    latency_by_model: list[ModelLatencyAggregateResponse]
+    input_tokens: TokenAggregateResponse
+    output_tokens: TokenAggregateResponse
+    total_tokens: TokenAggregateResponse
 
 
 def _options_response(options: EvaluationOptions) -> EvaluationOptionsResponse:
@@ -336,6 +380,7 @@ def _result_response(result: EvaluationResult) -> EvaluationResultResponse:
         latency_ms=result.latency_ms,
         input_tokens=result.input_tokens,
         output_tokens=result.output_tokens,
+        total_tokens=result.total_tokens,
         quality_scores=[
             QualityScoreResponse(
                 method=item.method,
@@ -412,12 +457,55 @@ def _quality_summary_response(
     )
 
 
+def _latency_response(aggregate: LatencyAggregate) -> LatencyAggregateResponse:
+    return LatencyAggregateResponse(
+        average_ms=aggregate.average_ms,
+        minimum_ms=aggregate.minimum_ms,
+        maximum_ms=aggregate.maximum_ms,
+        recorded_results=aggregate.recorded_results,
+        unavailable_results=aggregate.unavailable_results,
+    )
+
+
+def _model_latency_response(
+    item: ModelLatencyAggregate,
+) -> ModelLatencyAggregateResponse:
+    return ModelLatencyAggregateResponse(
+        model_id=item.model_id,
+        model_name=item.model_name,
+        **_latency_response(item.aggregate).model_dump(),
+    )
+
+
+def _token_response(aggregate: TokenAggregate) -> TokenAggregateResponse:
+    return TokenAggregateResponse(
+        sum_tokens=aggregate.sum_tokens,
+        recorded_results=aggregate.recorded_results,
+        unavailable_results=aggregate.unavailable_results,
+    )
+
+
+def _performance_summary_response(
+    summary: PerformanceSummary,
+) -> PerformanceSummaryResponse:
+    return PerformanceSummaryResponse(
+        latency=_latency_response(summary.latency),
+        latency_by_model=[
+            _model_latency_response(item) for item in summary.latency_by_model
+        ],
+        input_tokens=_token_response(summary.input_tokens),
+        output_tokens=_token_response(summary.output_tokens),
+        total_tokens=_token_response(summary.total_tokens),
+    )
+
+
 def _raise_evaluation_error(exc: Exception) -> NoReturn:
     if isinstance(
         exc,
         (
             EvaluationDatasetNotFoundError,
             EvaluationRunNotFoundError,
+            PerformanceEvaluationNotFoundError,
             QualityEvaluationNotFoundError,
         ),
     ):
@@ -510,6 +598,22 @@ async def read_evaluation_quality_summary(
     except QualityEvaluationNotFoundError as exc:
         _raise_evaluation_error(exc)
     return _quality_summary_response(metrics)
+
+
+@router.get(
+    "/{evaluation_id}/performance-summary",
+    response_model=PerformanceSummaryResponse,
+)
+async def read_evaluation_performance_summary(
+    evaluation_id: UUID,
+    session: DatabaseSession,
+) -> PerformanceSummaryResponse:
+    """Return latency and token aggregates with explicit sample counts."""
+    try:
+        summary = await get_performance_summary(session, evaluation_id)
+    except PerformanceEvaluationNotFoundError as exc:
+        _raise_evaluation_error(exc)
+    return _performance_summary_response(summary)
 
 
 @router.get(

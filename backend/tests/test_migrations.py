@@ -50,6 +50,7 @@ def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
         "model_base_url",
         "model_api_key_env_var",
         "model_parameters",
+        "total_tokens",
     } <= column_names(database_path, "evaluation_results")
 
     command.downgrade(config, "base")

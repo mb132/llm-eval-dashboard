@@ -87,6 +87,33 @@ export type EvaluationQualitySummary = {
   metrics: QualityMetricSummary[]
 }
 
+export type LatencyAggregate = {
+  average_ms: number | null
+  minimum_ms: number | null
+  maximum_ms: number | null
+  recorded_results: number
+  unavailable_results: number
+}
+
+export type ModelLatencyAggregate = LatencyAggregate & {
+  model_id: string
+  model_name: string
+}
+
+export type TokenAggregate = {
+  sum_tokens: number | null
+  recorded_results: number
+  unavailable_results: number
+}
+
+export type EvaluationPerformanceSummary = {
+  latency: LatencyAggregate
+  latency_by_model: ModelLatencyAggregate[]
+  input_tokens: TokenAggregate
+  output_tokens: TokenAggregate
+  total_tokens: TokenAggregate
+}
+
 export type EvaluationRun = {
   id: string
   status: EvaluationRunStatus
@@ -126,6 +153,7 @@ export type EvaluationResult = {
   latency_ms: number | null
   input_tokens: number | null
   output_tokens: number | null
+  total_tokens: number | null
   quality_scores: QualityScore[]
   started_at: string | null
   completed_at: string | null
@@ -217,5 +245,13 @@ export function getEvaluationQualitySummary(
 ): Promise<EvaluationQualitySummary> {
   return request<EvaluationQualitySummary>(
     `/api/evaluations/${evaluationId}/quality-summary`,
+  )
+}
+
+export function getEvaluationPerformanceSummary(
+  evaluationId: string,
+): Promise<EvaluationPerformanceSummary> {
+  return request<EvaluationPerformanceSummary>(
+    `/api/evaluations/${evaluationId}/performance-summary`,
   )
 }

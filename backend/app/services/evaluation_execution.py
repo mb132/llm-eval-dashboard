@@ -415,6 +415,7 @@ async def _execute_result(
                     latency_ms=result.latency_ms,
                     input_tokens=result.input_tokens,
                     output_tokens=result.output_tokens,
+                    total_tokens=result.total_tokens,
                 )
             else:
                 if snapshot.provider != "ollama":
@@ -505,6 +506,13 @@ async def _store_result_success(
         result.latency_ms = outcome.latency_ms
         result.input_tokens = outcome.input_tokens
         result.output_tokens = outcome.output_tokens
+        result.total_tokens = outcome.total_tokens
+        if (
+            result.total_tokens is None
+            and outcome.input_tokens is not None
+            and outcome.output_tokens is not None
+        ):
+            result.total_tokens = outcome.input_tokens + outcome.output_tokens
         result.completed_at = now
         await session.execute(
             update(EvaluationRun)

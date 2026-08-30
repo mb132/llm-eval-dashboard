@@ -44,6 +44,7 @@ def test_generate_calls_ollama_and_extracts_metrics(monkeypatch) -> None:
     assert result.latency_ms >= 0
     assert result.input_tokens == 18
     assert result.output_tokens == 3
+    assert result.total_tokens == 21
 
 
 def test_generate_rejects_oversized_response(monkeypatch) -> None:
@@ -75,7 +76,7 @@ def test_generate_normalizes_invalid_metrics_and_provider_errors(monkeypatch) ->
                     200,
                     json={
                         "response": "answer",
-                        "prompt_eval_count": -1,
+                        "prompt_eval_count": ollama.MAX_REPORTED_TOKENS + 1,
                         "eval_count": True,
                     },
                 ),
@@ -88,6 +89,7 @@ def test_generate_normalizes_invalid_metrics_and_provider_errors(monkeypatch) ->
             result = await generate_ollama_response("prompt", "model", client=client)
             assert result.input_tokens is None
             assert result.output_tokens is None
+            assert result.total_tokens is None
             with pytest.raises(OllamaError) as caught:
                 await generate_ollama_response("prompt", "model", client=client)
         assert caught.value.code == "provider_http_error"

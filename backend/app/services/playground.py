@@ -14,6 +14,7 @@ from ..schemas.models import validate_provider_settings
 
 REQUEST_TIMEOUT_SECONDS = 120.0
 MAX_PROVIDER_RESPONSE_BYTES = 1_000_000
+MAX_REPORTED_TOKENS = 1_000_000_000
 DEFAULT_BASE_URLS = {
     "ollama": "http://localhost:11434",
     "openai": "https://api.openai.com/v1",
@@ -319,7 +320,11 @@ def _optional_text(value: object) -> str | None:
 
 
 def _optional_int(value: object) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= MAX_REPORTED_TOKENS
+    ):
         return value
     return None
 
@@ -327,13 +332,13 @@ def _optional_int(value: object) -> int | None:
 def _sum_tokens(input_tokens: int | None, output_tokens: int | None) -> int | None:
     if input_tokens is None or output_tokens is None:
         return None
-    return input_tokens + output_tokens
+    return _optional_int(input_tokens + output_tokens)
 
 
 def _sum_optional_values(data: dict[str, Any], *keys: str) -> int | None:
     values = [_optional_int(data.get(key)) for key in keys]
     present = [value for value in values if value is not None]
-    return sum(present) if present else None
+    return _optional_int(sum(present)) if present else None
 
 
 def _mapping(value: object) -> dict[str, Any]:

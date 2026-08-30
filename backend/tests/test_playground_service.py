@@ -6,6 +6,7 @@ import pytest
 from app.models import ModelConfiguration
 from app.services.playground import (
     MAX_PROVIDER_RESPONSE_BYTES,
+    MAX_REPORTED_TOKENS,
     PlaygroundConfigurationError,
     PlaygroundProviderError,
     PlaygroundTimeoutError,
@@ -139,7 +140,7 @@ def test_openai_adapters_send_chat_completions(
                 "usage": {
                     "prompt_tokens": 7,
                     "completion_tokens": 2,
-                    "total_tokens": 9,
+                    "total_tokens": MAX_REPORTED_TOKENS + 1,
                 },
             },
         )

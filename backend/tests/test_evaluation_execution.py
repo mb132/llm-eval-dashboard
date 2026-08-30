@@ -134,6 +134,18 @@ def test_start_persists_complete_immutable_request_plan(
     assert first_page.status_code == 200
     assert first_page.json()["total"] == 4
     assert len(first_page.json()["items"]) == 1
+    assert first_page.json()["items"][0]["total_tokens"] is None
+    performance = prompt_client.get(
+        f"/api/evaluations/{run['id']}/performance-summary"
+    ).json()
+    assert performance["latency"]["average_ms"] is None
+    assert performance["latency"]["recorded_results"] == 0
+    assert performance["latency"]["unavailable_results"] == 4
+    assert performance["total_tokens"] == {
+        "sum_tokens": None,
+        "recorded_results": 0,
+        "unavailable_results": 4,
+    }
     assert (
         prompt_client.get(f"/api/evaluations/{run['id']}/results?limit=101").status_code
         == 422
@@ -211,6 +223,33 @@ def test_execution_completes_with_individual_provider_failure(
     assert exact["by_model"][0]["scored_results"] == 1
     assert exact["by_prompt_version"][0]["prompt_name"] == "Execution prompt"
 
+    performance = prompt_client.get(
+        f"/api/evaluations/{run['id']}/performance-summary"
+    ).json()
+    assert performance["latency"] == {
+        "average_ms": 12.0,
+        "minimum_ms": 12,
+        "maximum_ms": 12,
+        "recorded_results": 1,
+        "unavailable_results": 1,
+    }
+    assert performance["latency_by_model"][0]["average_ms"] == 12.0
+    assert performance["input_tokens"] == {
+        "sum_tokens": None,
+        "recorded_results": 0,
+        "unavailable_results": 2,
+    }
+    assert performance["output_tokens"] == {
+        "sum_tokens": 1,
+        "recorded_results": 1,
+        "unavailable_results": 1,
+    }
+    assert performance["total_tokens"] == {
+        "sum_tokens": None,
+        "recorded_results": 0,
+        "unavailable_results": 2,
+    }
+
 
 def test_execution_uses_the_persisted_model_configuration(
     prompt_client: TestClient,
@@ -258,7 +297,7 @@ def test_execution_uses_the_persisted_model_configuration(
             latency_ms=8,
             input_tokens=6,
             output_tokens=1,
-            total_tokens=7,
+            total_tokens=9,
             finish_reason="stop",
         )
 
@@ -277,6 +316,7 @@ def test_execution_uses_the_persisted_model_configuration(
     assert results["items"][0]["status"] == "succeeded"
     assert results["items"][0]["generated_output"] == "Paris"
     assert results["items"][0]["reported_model_name"] == "test-model:latest"
+    assert results["items"][0]["total_tokens"] == 9
 
 
 def test_quality_scores_group_by_model_and_prompt_version(
@@ -334,6 +374,24 @@ def test_quality_scores_group_by_model_and_prompt_version(
     assert len(exact["by_prompt_version"]) == 2
     assert {item["scored_results"] for item in exact["by_model"]} == {2}
     assert {item["scored_results"] for item in exact["by_prompt_version"]} == {2}
+
+    performance = prompt_client.get(
+        f"/api/evaluations/{run['id']}/performance-summary"
+    ).json()
+    assert performance["latency"] == {
+        "average_ms": 5.0,
+        "minimum_ms": 5,
+        "maximum_ms": 5,
+        "recorded_results": 4,
+        "unavailable_results": 0,
+    }
+    assert len(performance["latency_by_model"]) == 2
+    assert {item["recorded_results"] for item in performance["latency_by_model"]} == {2}
+    assert performance["total_tokens"] == {
+        "sum_tokens": 8,
+        "recorded_results": 4,
+        "unavailable_results": 0,
+    }
 
 
 def test_start_rejects_invalid_legacy_model_parameters(
@@ -448,5 +506,11 @@ def test_execution_endpoints_return_not_found(prompt_client: TestClient) -> None
     )
     assert (
         prompt_client.get(f"/api/evaluations/{missing_id}/quality-summary").status_code
+        == 404
+    )
+    assert (
+        prompt_client.get(
+            f"/api/evaluations/{missing_id}/performance-summary"
+        ).status_code
         == 404
     )
