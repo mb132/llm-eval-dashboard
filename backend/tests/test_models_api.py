@@ -2,7 +2,7 @@ import asyncio
 import os
 
 import pytest
-from app.models import ModelConfiguration
+from app.models import ModelConfiguration, ProviderConfiguration
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -13,15 +13,32 @@ def client(prompt_client: TestClient) -> TestClient:
     return prompt_client
 
 
-def test_model_configuration_crud_never_returns_secrets(
-    client: TestClient, monkeypatch
-) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "super-secret-value")
+def create_provider(
+    client: TestClient,
+    *,
+    kind: str = "ollama",
+    base_url: str | None = None,
+    api_key: str | None = None,
+) -> dict:
+    response = client.post(
+        "/api/providers",
+        json={
+            "display_name": f"{kind} provider",
+            "kind": kind,
+            "base_url": base_url,
+            "api_key": api_key,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_model_configuration_crud_never_returns_secrets(client: TestClient) -> None:
+    provider = create_provider(client, kind="openai", api_key="super-secret-value")
     payload = {
         "display_name": "OpenAI Model",
-        "provider": "openai",
+        "provider_id": provider["id"],
         "model_name": "gpt-5",
-        "api_key_env_var": "OPENAI_API_KEY",
         "parameters": {"temperature": 0.2, "max_tokens": 1000},
         "active": True,
     }
@@ -31,17 +48,16 @@ def test_model_configuration_crud_never_returns_secrets(
     assert created.status_code == 201
     body = created.json()
     assert body["id"] == 1
-    assert body["has_credentials"] is True
-    assert body["api_key_env_var"] == "OPENAI_API_KEY"
+    assert body["provider"]["has_api_key"] is True
     assert "super-secret-value" not in created.text
 
     listed = client.get("/api/models")
-    fetched = client.get("/api/models/1")
+    fetched = client.get(f"/api/models/{body['id']}")
     assert listed.json() == [body]
     assert fetched.json() == body
 
     updated = client.patch(
-        "/api/models/1",
+        f"/api/models/{body['id']}",
         json={"display_name": "Primary judge", "active": False},
     )
     assert updated.status_code == 200
@@ -49,65 +65,68 @@ def test_model_configuration_crud_never_returns_secrets(
     assert updated.json()["active"] is False
     assert updated.json()["model_name"] == "gpt-5"
 
-    deleted = client.delete("/api/models/1")
+    deleted = client.delete(f"/api/models/{body['id']}")
     assert deleted.status_code == 204
-    assert client.get("/api/models/1").status_code == 404
+    assert client.get(f"/api/models/{body['id']}").status_code == 404
     assert client.get("/api/models").json() == []
 
 
 def test_ollama_and_openai_compatible_configurations_are_representable(
     client: TestClient,
 ) -> None:
+    ollama_provider = create_provider(
+        client, kind="ollama", base_url="http://localhost:11434"
+    )
+    compatible_provider = create_provider(
+        client, kind="openai_compatible", base_url="https://example.edu/v1"
+    )
     ollama = client.post(
         "/api/models",
         json={
             "display_name": "Local Gemma",
-            "provider": "ollama",
+            "provider_id": ollama_provider["id"],
             "model_name": "gemma4:e4b",
-            "base_url": "http://localhost:11434",
         },
     )
     compatible = client.post(
         "/api/models",
         json={
             "display_name": "University endpoint",
-            "provider": "openai_compatible",
+            "provider_id": compatible_provider["id"],
             "model_name": "campus-model",
-            "base_url": "https://example.edu/v1",
         },
     )
 
     assert ollama.status_code == 201
-    assert ollama.json()["has_credentials"] is False
+    assert ollama.json()["provider"]["has_api_key"] is False
     assert compatible.status_code == 201
-    assert compatible.json()["provider"] == "openai_compatible"
+    assert compatible.json()["provider"]["kind"] == "openai_compatible"
 
 
 def test_api_key_value_is_not_persisted(
     client: TestClient,
     evaluation_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch,
 ) -> None:
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "never-store-this")
+    provider = create_provider(
+        client, kind="anthropic", api_key="never-store-this"
+    )
     response = client.post(
         "/api/models",
         json={
             "display_name": "Claude",
-            "provider": "anthropic",
+            "provider_id": provider["id"],
             "model_name": "claude-model",
-            "api_key_env_var": "ANTHROPIC_API_KEY",
         },
     )
     assert response.status_code == 201
 
-    async def load_stored_model() -> ModelConfiguration:
+    async def load_stored_provider() -> ProviderConfiguration:
         async with evaluation_session_factory() as session:
-            return (await session.scalars(select(ModelConfiguration))).one()
+            return (await session.scalars(select(ProviderConfiguration))).one()
 
-    stored = asyncio.run(load_stored_model())
-    assert stored.api_key_env_var == "ANTHROPIC_API_KEY"
+    stored = asyncio.run(load_stored_provider())
     assert "never-store-this" not in repr(stored)
-    assert not hasattr(stored, "api_key")
+    assert stored.api_key_ciphertext is not None
 
 
 def test_invalid_provider_and_environment_variable_are_rejected(
@@ -134,6 +153,21 @@ def test_invalid_provider_and_environment_variable_are_rejected(
     assert invalid_env_name.status_code == 422
     assert "actual-secret-value!" not in invalid_env_name.text
     assert "actual-secret-value!" not in os.environ
+
+
+def test_model_parameters_are_bounded(client: TestClient) -> None:
+    response = client.post(
+        "/api/models",
+        json={
+            "display_name": "Oversized",
+            "provider": "ollama",
+            "model_name": "test-model",
+            "parameters": {"value": "x" * 20_000},
+        },
+    )
+
+    assert response.status_code == 422
+    assert "at most 20000 bytes" in response.text
 
 
 @pytest.mark.parametrize(
@@ -171,16 +205,20 @@ def test_model_configuration_rejects_credential_forwarding_combinations(
 
 
 def test_sqlite_configuration_persists_between_sessions(
+    prompt_client: TestClient,
     evaluation_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    provider = create_provider(
+        prompt_client, kind="ollama", base_url="http://localhost:11434"
+    )
+
     async def persist_and_reload() -> ModelConfiguration:
         async with evaluation_session_factory() as session:
             session.add(
                 ModelConfiguration(
                     display_name="Local Gemma",
-                    provider="ollama",
+                    provider_id=provider["id"],
                     model_name="gemma4:e4b",
-                    base_url="http://localhost:11434",
                 )
             )
             await session.commit()

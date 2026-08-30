@@ -13,7 +13,12 @@ import { Link, useParams } from "react-router-dom"
 import {
   getEvaluationResults,
   getEvaluationRun,
+  getEvaluationQualitySummary,
+  getEvaluationPerformanceSummary,
+  type EvaluationPerformanceSummary,
   type EvaluationResult,
+  type EvaluationQualitySummary,
+  type QualityAggregate,
   type EvaluationRun,
   type EvaluationRunStatus,
 } from "@/api/evaluations"
@@ -35,6 +40,10 @@ export function EvaluationRunPage() {
   const [evaluation, setEvaluation] = useState<EvaluationRun | null>(null)
   const [results, setResults] = useState<EvaluationResult[]>([])
   const [resultTotal, setResultTotal] = useState(0)
+  const [qualitySummary, setQualitySummary] =
+    useState<EvaluationQualitySummary | null>(null)
+  const [performanceSummary, setPerformanceSummary] =
+    useState<EvaluationPerformanceSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,10 +65,19 @@ export function EvaluationRunPage() {
           getEvaluationRun(id),
           getEvaluationResults(id, 0, RESULT_PAGE_SIZE),
         ])
+        const [quality, performance] =
+          run.status === "completed" || run.status === "failed"
+            ? await Promise.all([
+                getEvaluationQualitySummary(id),
+                getEvaluationPerformanceSummary(id),
+              ])
+            : [null, null]
         if (!active) return
         setEvaluation(run)
         setResults(page.items)
         setResultTotal(page.total)
+        if (quality) setQualitySummary(quality)
+        if (performance) setPerformanceSummary(performance)
         setError(null)
         if (run.status === "pending" || run.status === "running") {
           timeoutId = window.setTimeout(poll, POLL_INTERVAL_MS)
@@ -186,14 +204,16 @@ export function EvaluationRunPage() {
         </CardContent>
       </Card>
 
+      {qualitySummary && <QualitySummary summary={qualitySummary} />}
+      {performanceSummary && <PerformanceSummary summary={performanceSummary} />}
+
       <section className="space-y-4" aria-labelledby="results-heading">
         <div>
           <h2 id="results-heading" className="text-2xl font-semibold">
             Individual results
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Raw outputs are shown here; quality scoring and costs follow in later
-            features.
+            Raw outputs, execution metrics, and quality scores are shown together.
           </p>
         </div>
         {error && (
@@ -259,6 +279,62 @@ function StatusBadge({ status }: { status: EvaluationRunStatus }) {
   )
 }
 
+function PerformanceSummary({ summary }: { summary: EvaluationPerformanceSummary }) {
+  const latency = summary.latency
+  return (
+    <Card className="shadow-sm">
+      <CardHeader>
+        <CardTitle>
+          <h2>Performance</h2>
+        </CardTitle>
+        <CardDescription>
+          Full-response latency and normalized provider token usage. Missing values
+          are excluded from aggregates.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-6 lg:grid-cols-2">
+        <section aria-labelledby="latency-summary-heading">
+          <h3 id="latency-summary-heading" className="font-medium">
+            Latency
+          </h3>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+            <Metric label="Average" value={formatLatency(latency.average_ms)} />
+            <Metric label="Minimum" value={formatLatency(latency.minimum_ms)} />
+            <Metric label="Maximum" value={formatLatency(latency.maximum_ms)} />
+          </dl>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {formatAvailability(latency.recorded_results, latency.unavailable_results)}
+          </p>
+          <h4 className="mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Average by model
+          </h4>
+          <ul className="mt-2 space-y-2 text-sm">
+            {summary.latency_by_model.map((model) => (
+              <li key={model.model_id} className="flex justify-between gap-3">
+                <span>{model.model_name}</span>
+                <span className="text-right text-muted-foreground">
+                  {formatLatency(model.average_ms)} ·{" "}
+                  {formatAvailability(model.recorded_results, model.unavailable_results)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <section aria-labelledby="token-summary-heading">
+          <h3 id="token-summary-heading" className="font-medium">
+            Token usage
+          </h3>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-3">
+            <AggregateMetric label="Input" aggregate={summary.input_tokens} />
+            <AggregateMetric label="Output" aggregate={summary.output_tokens} />
+            <AggregateMetric label="Total" aggregate={summary.total_tokens} />
+          </dl>
+        </section>
+      </CardContent>
+    </Card>
+  )
+}
+
 function ResultCard({ result }: { result: EvaluationResult }) {
   return (
     <Card className="shadow-sm">
@@ -301,7 +377,7 @@ function ResultCard({ result }: { result: EvaluationResult }) {
         {result.status === "pending" && (
           <p className="text-sm text-muted-foreground">Waiting to be processed…</p>
         )}
-        <dl className="grid gap-3 border-t pt-4 sm:grid-cols-3">
+        <dl className="grid gap-3 border-t pt-4 sm:grid-cols-4">
           <Metric
             label="Latency"
             value={result.latency_ms === null ? "Unavailable" : `${result.latency_ms} ms`}
@@ -309,7 +385,28 @@ function ResultCard({ result }: { result: EvaluationResult }) {
           <Metric label="Input tokens" value={formatMetric(result.input_tokens)} />
           <Metric label="Output tokens" value={formatMetric(result.output_tokens)} />
           <Metric label="Max output tokens" value={result.max_output_tokens} />
+          <Metric label="Total tokens" value={formatMetric(result.total_tokens)} />
         </dl>
+        <div className="border-t pt-4">
+          <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Quality
+          </h4>
+          {result.quality_scores.length === 0 ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Quality scores unavailable for this historical result.
+            </p>
+          ) : (
+            <dl className="mt-2 grid gap-3 sm:grid-cols-2">
+              {result.quality_scores.map((quality) => (
+                <Metric
+                  key={`${quality.method}-${quality.version}`}
+                  label={`${qualityMetricLabel(quality.method)} v${quality.version}`}
+                  value={formatQualityScore(quality.score)}
+                />
+              ))}
+            </dl>
+          )}
+        </div>
       </CardContent>
     </Card>
   )
@@ -376,6 +473,34 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   )
 }
 
+function AggregateMetric({
+  label,
+  aggregate,
+}: {
+  label: string
+  aggregate: EvaluationPerformanceSummary["input_tokens"]
+}) {
+  return (
+    <div className="rounded-lg bg-muted p-3">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-1 font-semibold">{formatMetric(aggregate.sum_tokens)}</dd>
+      <dd className="mt-1 text-xs text-muted-foreground">
+        {formatAvailability(aggregate.recorded_results, aggregate.unavailable_results)}
+      </dd>
+    </div>
+  )
+}
+
+function formatLatency(value: number | null): string {
+  return value === null
+    ? "Unavailable"
+    : `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ms`
+}
+
+function formatAvailability(recorded: number, unavailable: number): string {
+  return `${recorded} recorded · ${unavailable} unavailable`
+}
+
 function ErrorMessage({ message }: { message: string }) {
   return (
     <div
@@ -390,4 +515,116 @@ function ErrorMessage({ message }: { message: string }) {
 
 function formatMetric(value: number | null) {
   return value === null ? "Unavailable" : value.toLocaleString()
+}
+
+function QualitySummary({ summary }: { summary: EvaluationQualitySummary }) {
+  return (
+    <section className="space-y-4" aria-labelledby="quality-heading">
+      <div>
+        <h2 id="quality-heading" className="text-2xl font-semibold">
+          Response quality
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Deterministic normalized matching. Pending and failed requests are
+          excluded from averages and shown as unavailable.
+        </p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {summary.metrics.map((metric) => (
+          <Card key={`${metric.method}-${metric.version}`} className="shadow-sm">
+            <CardHeader>
+              <CardTitle>
+                <h3>{qualityMetricLabel(metric.method)}</h3>
+              </CardTitle>
+              <CardDescription>Metric version {metric.version}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div>
+                <p className="text-3xl font-semibold">
+                  {formatQualityScore(metric.overall.average_score)}
+                </p>
+                <SampleCounts aggregate={metric.overall} />
+              </div>
+              <QualityBreakdown
+                title="By model"
+                rows={metric.by_model.map((item) => ({
+                  key: item.model_id,
+                  label: item.model_name,
+                  aggregate: item,
+                }))}
+              />
+              <QualityBreakdown
+                title="By prompt version"
+                rows={metric.by_prompt_version.map((item) => ({
+                  key: item.prompt_version_id,
+                  label: `${item.prompt_name} · Version ${item.prompt_version_number}`,
+                  aggregate: item,
+                }))}
+              />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function QualityBreakdown({
+  title,
+  rows,
+}: {
+  title: string
+  rows: Array<{ key: string; label: string; aggregate: QualityAggregate }>
+}) {
+  return (
+    <div>
+      <h4 className="text-sm font-medium">{title}</h4>
+      <dl className="mt-2 space-y-2">
+        {rows.map((row) => (
+          <div
+            key={row.key}
+            className="flex items-start justify-between gap-4 rounded-lg bg-muted p-3"
+          >
+            <dt className="text-sm">{row.label}</dt>
+            <dd className="text-right text-sm font-semibold">
+              {formatQualityScore(row.aggregate.average_score)}
+              <SampleCounts aggregate={row.aggregate} compact />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+function SampleCounts({
+  aggregate,
+  compact = false,
+}: {
+  aggregate: QualityAggregate
+  compact?: boolean
+}) {
+  return (
+    <span
+      className={`${compact ? "block" : "mt-1 block"} text-xs font-normal text-muted-foreground`}
+    >
+      {aggregate.scored_results} scored · {aggregate.unavailable_results} unavailable
+    </span>
+  )
+}
+
+function qualityMetricLabel(method: string) {
+  const labels: Record<string, string> = {
+    normalized_exact_match: "Normalized exact match",
+    normalized_contains_match: "Normalized contains match",
+  }
+  return labels[method] ?? method
+}
+
+function formatQualityScore(value: number | null) {
+  if (value === null) return "Unavailable"
+  return new Intl.NumberFormat(undefined, {
+    style: "percent",
+    maximumFractionDigits: 1,
+  }).format(value)
 }

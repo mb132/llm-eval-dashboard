@@ -52,9 +52,20 @@ After reviewing a configuration, start the evaluation from the same page. The
 server persists its inputs first, processes up to four model requests in the
 background, and opens a progress page that can be refreshed safely. Individual
 request failures remain visible without stopping the rest of the run. This is a
-local single-process worker: a server restart marks unfinished work as failed
-instead of replaying requests whose provider-side outcome is unknown. Quality
-scores and cost estimates are intentionally added by later features.
+local single-process worker. Each request stores the effective model
+configuration before execution and limits generated output to at most 1,024
+tokens. Later model edits therefore do not rewrite a run. A server restart marks
+unfinished work as failed instead of replaying requests whose provider-side
+outcome is unknown. Successful responses receive versioned normalized exact and
+contains-match scores. Matching normalizes Unicode, casing, and whitespace but
+keeps punctuation significant. Failed requests remain unavailable and do not
+lower quality averages. These deterministic metrics do not recognize arbitrary
+paraphrases or prove correctness. The results page also reports full-response
+latency in milliseconds and normalized provider token usage. Total tokens use the
+provider value where available, otherwise the input/output sum. Aggregates
+exclude unavailable values and show their sample counts; missing provider usage
+remains unavailable rather than becoming zero. Cost estimates are added by a
+later feature.
 
 The application has no authentication or tenant isolation and is intended for
 trusted local/demo use only. Do not expose it publicly or store confidential

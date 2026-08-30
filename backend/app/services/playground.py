@@ -1,5 +1,6 @@
 """Provider dispatch for non-streaming, one-shot playground prompts."""
 
+import json
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
@@ -12,6 +13,8 @@ from ..schemas.providers import validate_provider_settings
 from .credentials import CredentialConfigurationError, decrypt_api_key
 
 REQUEST_TIMEOUT_SECONDS = 120.0
+MAX_PROVIDER_RESPONSE_BYTES = 1_000_000
+MAX_REPORTED_TOKENS = 1_000_000_000
 DEFAULT_BASE_URLS = {
     "ollama": "http://localhost:11434",
     "openai": "https://api.openai.com/v1",
@@ -49,6 +52,7 @@ async def generate_prompt(
     prompt: str,
     system_prompt: str | None,
     *,
+    max_output_tokens: int | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> PlaygroundResult:
     """Execute a prompt through the adapter selected by the stored provider."""
@@ -75,6 +79,7 @@ async def generate_prompt(
             model,
             prompt,
             system_prompt,
+            max_output_tokens=max_output_tokens,
         )
     except httpx.TimeoutException as exc:
         raise PlaygroundTimeoutError("The provider request timed out.") from exc
@@ -107,6 +112,8 @@ async def _request_provider(
     model: ModelConfiguration,
     prompt: str,
     system_prompt: str | None,
+    *,
+    max_output_tokens: int | None,
 ) -> dict[str, Any]:
     provider = model.provider.kind
     credential = _resolve_credential(model)
@@ -121,6 +128,8 @@ async def _request_provider(
             "stream": False,
             "options": dict(model.parameters),
         }
+        if max_output_tokens is not None:
+            payload["options"]["num_predict"] = max_output_tokens
         if system_prompt:
             payload["system"] = system_prompt
         url = f"{_base_url(model).rstrip('/')}/api/generate"
@@ -139,12 +148,19 @@ async def _request_provider(
                 "stream": False,
             }
         )
+        if max_output_tokens is not None:
+            if provider == "openai":
+                payload.pop("max_tokens", None)
+                payload["max_completion_tokens"] = max_output_tokens
+            else:
+                payload.pop("max_completion_tokens", None)
+                payload["max_tokens"] = max_output_tokens
         url = f"{_base_url(model).rstrip('/')}/chat/completions"
     elif provider == "anthropic":
         headers["x-api-key"] = credential or ""
         headers["anthropic-version"] = "2023-06-01"
         payload = dict(model.parameters)
-        max_tokens = payload.get("max_tokens", 1024)
+        max_tokens = max_output_tokens or payload.get("max_tokens", 1024)
         payload.update(
             {
                 "model": model.model_name,
@@ -164,6 +180,8 @@ async def _request_provider(
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": dict(model.parameters),
         }
+        if max_output_tokens is not None:
+            payload["generationConfig"]["maxOutputTokens"] = max_output_tokens
         if system_prompt:
             payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
         model_name = model.model_name.removeprefix("models/")
@@ -172,9 +190,21 @@ async def _request_provider(
             f"{quote(model_name, safe='')}:generateContent"
         )
 
-    response = await client.post(url, headers=headers, json=payload)
-    response.raise_for_status()
-    data: dict[str, Any] = response.json()
+    async with client.stream("POST", url, headers=headers, json=payload) as response:
+        response.raise_for_status()
+        body = bytearray()
+        async for chunk in response.aiter_bytes():
+            body.extend(chunk)
+            if len(body) > MAX_PROVIDER_RESPONSE_BYTES:
+                raise PlaygroundProviderError(
+                    "The provider response exceeds the safe size limit."
+                )
+    parsed = json.loads(body)
+    if not isinstance(parsed, dict):
+        raise PlaygroundProviderError(
+            "The provider returned an invalid response object."
+        )
+    data: dict[str, Any] = parsed
     return data
 
 
@@ -297,19 +327,25 @@ def _optional_text(value: object) -> str | None:
 
 
 def _optional_int(value: object) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= MAX_REPORTED_TOKENS
+    ):
+        return value
+    return None
 
 
 def _sum_tokens(input_tokens: int | None, output_tokens: int | None) -> int | None:
     if input_tokens is None or output_tokens is None:
         return None
-    return input_tokens + output_tokens
+    return _optional_int(input_tokens + output_tokens)
 
 
 def _sum_optional_values(data: dict[str, Any], *keys: str) -> int | None:
     values = [_optional_int(data.get(key)) for key in keys]
     present = [value for value in values if value is not None]
-    return sum(present) if present else None
+    return _optional_int(sum(present)) if present else None
 
 
 def _mapping(value: object) -> dict[str, Any]:

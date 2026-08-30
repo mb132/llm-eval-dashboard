@@ -81,20 +81,35 @@ def test_options_expose_active_persisted_runnable_models(
     prompt_client: TestClient,
 ) -> None:
     """Return active runnable models without leaking provider settings."""
+    ollama_provider = prompt_client.post(
+        "/api/providers",
+        json={
+            "display_name": "Private Ollama",
+            "kind": "ollama",
+            "base_url": "http://private-provider.internal",
+        },
+    ).json()
+    custom_provider = prompt_client.post(
+        "/api/providers",
+        json={
+            "display_name": "Custom endpoint",
+            "kind": "custom",
+            "base_url": "https://custom.example",
+        },
+    ).json()
     active = prompt_client.post(
         "/api/models",
         json={
             "display_name": "Local model",
-            "provider": "ollama",
+            "provider_id": ollama_provider["id"],
             "model_name": "local-model",
-            "base_url": "http://private-provider.internal",
         },
     ).json()
     prompt_client.post(
         "/api/models",
         json={
             "display_name": "Inactive model",
-            "provider": "ollama",
+            "provider_id": ollama_provider["id"],
             "model_name": "inactive-model",
             "active": False,
         },
@@ -103,9 +118,8 @@ def test_options_expose_active_persisted_runnable_models(
         "/api/models",
         json={
             "display_name": "Protocol-free endpoint",
-            "provider": "custom",
+            "provider_id": custom_provider["id"],
             "model_name": "custom-model",
-            "base_url": "https://custom.example",
         },
     )
     first_version_id, second_version_id = create_prompt_with_two_versions(prompt_client)

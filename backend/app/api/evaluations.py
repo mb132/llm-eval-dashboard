@@ -37,8 +37,29 @@ from ..services.evaluation_execution import (
     list_evaluation_results,
     list_evaluation_runs,
 )
+from ..services.performance import (
+    LatencyAggregate,
+    ModelLatencyAggregate,
+    PerformanceEvaluationNotFoundError,
+    PerformanceSummary,
+    TokenAggregate,
+    get_performance_summary,
+)
+from ..services.quality import (
+    QUALITY_METRICS,
+    ModelQualityAggregate,
+    PromptQualityAggregate,
+    QualityAggregate,
+    QualityEvaluationNotFoundError,
+    QualityMetricSummary,
+    get_quality_summary,
+)
 
 router = APIRouter(prefix="/api/evaluations", tags=["evaluations"])
+QUALITY_METRIC_ORDER = {
+    (metric.method, metric.version): index
+    for index, metric in enumerate(QUALITY_METRICS)
+}
 DatabaseSession = Annotated[AsyncSession, Depends(get_session)]
 EvaluationSessionFactory = Annotated[
     async_sessionmaker[AsyncSession], Depends(get_session_factory)
@@ -179,6 +200,8 @@ class EvaluationResultResponse(BaseModel):
     latency_ms: int | None
     input_tokens: int | None
     output_tokens: int | None
+    total_tokens: int | None
+    quality_scores: list["QualityScoreResponse"]
     started_at: datetime | None
     completed_at: datetime | None
 
@@ -201,6 +224,87 @@ class EvaluationRunPageResponse(BaseModel):
     failed: int
     offset: int
     limit: int
+
+class QualityScoreResponse(BaseModel):
+    """One versioned score, or null when the request could not be scored."""
+
+    method: str
+    version: int
+    score: float | None
+
+
+class QualityAggregateResponse(BaseModel):
+    """One average with explicit scored and unavailable sample counts."""
+
+    average_score: float | None
+    scored_results: int
+    unavailable_results: int
+
+
+class ModelQualityAggregateResponse(QualityAggregateResponse):
+    """Quality values grouped by model."""
+
+    model_id: str
+    model_name: str
+
+
+class PromptQualityAggregateResponse(QualityAggregateResponse):
+    """Quality values grouped by immutable prompt version."""
+
+    prompt_version_id: UUID
+    prompt_name: str
+    prompt_version_number: int
+
+
+class QualityMetricSummaryResponse(BaseModel):
+    """Overall and grouped aggregations for one metric version."""
+
+    method: str
+    version: int
+    overall: QualityAggregateResponse
+    by_model: list[ModelQualityAggregateResponse]
+    by_prompt_version: list[PromptQualityAggregateResponse]
+
+
+class EvaluationQualitySummaryResponse(BaseModel):
+    """All deterministic quality metrics for an evaluation."""
+
+    metrics: list[QualityMetricSummaryResponse]
+
+
+class LatencyAggregateResponse(BaseModel):
+    """Full-response latency with explicit sample counts."""
+
+    average_ms: float | None
+    minimum_ms: int | None
+    maximum_ms: int | None
+    recorded_results: int
+    unavailable_results: int
+
+
+class ModelLatencyAggregateResponse(LatencyAggregateResponse):
+    """Latency values grouped by immutable model selection."""
+
+    model_id: str
+    model_name: str
+
+
+class TokenAggregateResponse(BaseModel):
+    """One token sum with explicit sample counts."""
+
+    sum_tokens: int | None
+    recorded_results: int
+    unavailable_results: int
+
+
+class PerformanceSummaryResponse(BaseModel):
+    """Persisted latency and token usage for an evaluation."""
+
+    latency: LatencyAggregateResponse
+    latency_by_model: list[ModelLatencyAggregateResponse]
+    input_tokens: TokenAggregateResponse
+    output_tokens: TokenAggregateResponse
+    total_tokens: TokenAggregateResponse
 
 
 def _options_response(options: EvaluationOptions) -> EvaluationOptionsResponse:
@@ -292,6 +396,20 @@ def _result_response(result: EvaluationResult) -> EvaluationResultResponse:
         latency_ms=result.latency_ms,
         input_tokens=result.input_tokens,
         output_tokens=result.output_tokens,
+        total_tokens=result.total_tokens,
+        quality_scores=[
+            QualityScoreResponse(
+                method=item.method,
+                version=item.metric_version,
+                score=item.score,
+            )
+            for item in sorted(
+                result.quality_scores,
+                key=lambda item: QUALITY_METRIC_ORDER.get(
+                    (item.method, item.metric_version), len(QUALITY_METRIC_ORDER)
+                ),
+            )
+        ],
         started_at=result.started_at,
         completed_at=result.completed_at,
     )
@@ -317,8 +435,107 @@ def _run_page_response(page: EvaluationRunPage) -> EvaluationRunPageResponse:
     )
 
 
+def _aggregate_response(aggregate: QualityAggregate) -> QualityAggregateResponse:
+    return QualityAggregateResponse(
+        average_score=aggregate.average_score,
+        scored_results=aggregate.scored_results,
+        unavailable_results=aggregate.unavailable_results,
+    )
+
+
+def _model_aggregate_response(
+    item: ModelQualityAggregate,
+) -> ModelQualityAggregateResponse:
+    return ModelQualityAggregateResponse(
+        model_id=item.model_id,
+        model_name=item.model_name,
+        **_aggregate_response(item.aggregate).model_dump(),
+    )
+
+
+def _prompt_aggregate_response(
+    item: PromptQualityAggregate,
+) -> PromptQualityAggregateResponse:
+    return PromptQualityAggregateResponse(
+        prompt_version_id=item.prompt_version_id,
+        prompt_name=item.prompt_name,
+        prompt_version_number=item.prompt_version_number,
+        **_aggregate_response(item.aggregate).model_dump(),
+    )
+
+
+def _quality_summary_response(
+    metrics: list[QualityMetricSummary],
+) -> EvaluationQualitySummaryResponse:
+    return EvaluationQualitySummaryResponse(
+        metrics=[
+            QualityMetricSummaryResponse(
+                method=metric.method,
+                version=metric.version,
+                overall=_aggregate_response(metric.overall),
+                by_model=[_model_aggregate_response(item) for item in metric.by_model],
+                by_prompt_version=[
+                    _prompt_aggregate_response(item)
+                    for item in metric.by_prompt_version
+                ],
+            )
+            for metric in metrics
+        ]
+    )
+
+
+def _latency_response(aggregate: LatencyAggregate) -> LatencyAggregateResponse:
+    return LatencyAggregateResponse(
+        average_ms=aggregate.average_ms,
+        minimum_ms=aggregate.minimum_ms,
+        maximum_ms=aggregate.maximum_ms,
+        recorded_results=aggregate.recorded_results,
+        unavailable_results=aggregate.unavailable_results,
+    )
+
+
+def _model_latency_response(
+    item: ModelLatencyAggregate,
+) -> ModelLatencyAggregateResponse:
+    return ModelLatencyAggregateResponse(
+        model_id=item.model_id,
+        model_name=item.model_name,
+        **_latency_response(item.aggregate).model_dump(),
+    )
+
+
+def _token_response(aggregate: TokenAggregate) -> TokenAggregateResponse:
+    return TokenAggregateResponse(
+        sum_tokens=aggregate.sum_tokens,
+        recorded_results=aggregate.recorded_results,
+        unavailable_results=aggregate.unavailable_results,
+    )
+
+
+def _performance_summary_response(
+    summary: PerformanceSummary,
+) -> PerformanceSummaryResponse:
+    return PerformanceSummaryResponse(
+        latency=_latency_response(summary.latency),
+        latency_by_model=[
+            _model_latency_response(item) for item in summary.latency_by_model
+        ],
+        input_tokens=_token_response(summary.input_tokens),
+        output_tokens=_token_response(summary.output_tokens),
+        total_tokens=_token_response(summary.total_tokens),
+    )
+
+
 def _raise_evaluation_error(exc: Exception) -> NoReturn:
-    if isinstance(exc, (EvaluationDatasetNotFoundError, EvaluationRunNotFoundError)):
+    if isinstance(
+        exc,
+        (
+            EvaluationDatasetNotFoundError,
+            EvaluationRunNotFoundError,
+            PerformanceEvaluationNotFoundError,
+            QualityEvaluationNotFoundError,
+        ),
+    ):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if isinstance(exc, EvaluationConfigurationError):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -404,6 +621,38 @@ async def read_evaluation_run(
     except EvaluationRunNotFoundError as exc:
         _raise_evaluation_error(exc)
     return _run_response(evaluation)
+
+
+@router.get(
+    "/{evaluation_id}/quality-summary",
+    response_model=EvaluationQualitySummaryResponse,
+)
+async def read_evaluation_quality_summary(
+    evaluation_id: UUID,
+    session: DatabaseSession,
+) -> EvaluationQualitySummaryResponse:
+    """Return quality aggregates with explicit sample counts."""
+    try:
+        metrics = await get_quality_summary(session, evaluation_id)
+    except QualityEvaluationNotFoundError as exc:
+        _raise_evaluation_error(exc)
+    return _quality_summary_response(metrics)
+
+
+@router.get(
+    "/{evaluation_id}/performance-summary",
+    response_model=PerformanceSummaryResponse,
+)
+async def read_evaluation_performance_summary(
+    evaluation_id: UUID,
+    session: DatabaseSession,
+) -> PerformanceSummaryResponse:
+    """Return latency and token aggregates with explicit sample counts."""
+    try:
+        summary = await get_performance_summary(session, evaluation_id)
+    except PerformanceEvaluationNotFoundError as exc:
+        _raise_evaluation_error(exc)
+    return _performance_summary_response(summary)
 
 
 @router.get(

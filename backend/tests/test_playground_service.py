@@ -3,8 +3,11 @@ import json
 
 import httpx
 import pytest
-from app.models import ModelConfiguration
+from app.models import ModelConfiguration, ProviderConfiguration
+from app.services.credentials import encrypt_api_key
 from app.services.playground import (
+    MAX_PROVIDER_RESPONSE_BYTES,
+    MAX_REPORTED_TOKENS,
     PlaygroundConfigurationError,
     PlaygroundProviderError,
     PlaygroundTimeoutError,
@@ -17,26 +20,38 @@ def model_configuration(
     *,
     model_name: str = "test-model",
     base_url: str | None = None,
-    api_key_env_var: str | None = None,
+    api_key: str | None = None,
     parameters: dict | None = None,
 ) -> ModelConfiguration:
     return ModelConfiguration(
         display_name=provider.title(),
-        provider=provider,
+        provider_id=1,
         model_name=model_name,
-        base_url=base_url,
-        api_key_env_var=api_key_env_var,
         parameters=parameters or {"temperature": 0.2},
+        provider=ProviderConfiguration(
+            id=1,
+            display_name=provider.title(),
+            kind=provider,
+            base_url=base_url,
+            api_key_ciphertext=(
+                encrypt_api_key(api_key, provider_id=1, provider_kind=provider)
+                if api_key
+                else None
+            ),
+        ),
     )
 
 
-def run_with_transport(model, handler, *, system_prompt="Be concise."):
+def run_with_transport(
+    model, handler, *, system_prompt="Be concise.", max_output_tokens=None
+):
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await generate_prompt(
                 model,
                 "Hello",
                 system_prompt,
+                max_output_tokens=max_output_tokens,
                 client=client,
             )
 
@@ -62,7 +77,7 @@ def test_ollama_adapter_uses_configuration_and_normalizes_metrics() -> None:
             "prompt": "Hello",
             "system": "Be concise.",
             "stream": False,
-            "options": {"temperature": 0.2},
+            "options": {"temperature": 0.2, "num_predict": 1024},
         }
         return httpx.Response(
             200,
@@ -74,7 +89,7 @@ def test_ollama_adapter_uses_configuration_and_normalizes_metrics() -> None:
             },
         )
 
-    result = run_with_transport(model, handler)
+    result = run_with_transport(model, handler, max_output_tokens=1024)
     assert result.response == "Hello there"
     assert result.input_tokens == 5
     assert result.output_tokens == 3
@@ -95,12 +110,10 @@ def test_openai_adapters_send_chat_completions(
     credential_name: str | None,
     monkeypatch,
 ) -> None:
-    if credential_name:
-        monkeypatch.setenv(credential_name, "test-secret")
     model = model_configuration(
         provider,
         base_url=base_url,
-        api_key_env_var=credential_name,
+        api_key="test-secret" if credential_name else None,
         parameters={"temperature": 0.4, "model": "must-not-win", "stream": True},
     )
 
@@ -115,6 +128,10 @@ def test_openai_adapters_send_chat_completions(
         assert body["model"] == "test-model"
         assert body["stream"] is False
         assert body["temperature"] == 0.4
+        expected_token_field = (
+            "max_completion_tokens" if provider == "openai" else "max_tokens"
+        )
+        assert body[expected_token_field] == 1024
         assert body["messages"] == [
             {"role": "system", "content": "Be concise."},
             {"role": "user", "content": "Hello"},
@@ -131,21 +148,20 @@ def test_openai_adapters_send_chat_completions(
                 "usage": {
                     "prompt_tokens": 7,
                     "completion_tokens": 2,
-                    "total_tokens": 9,
+                    "total_tokens": MAX_REPORTED_TOKENS + 1,
                 },
             },
         )
 
-    result = run_with_transport(model, handler)
+    result = run_with_transport(model, handler, max_output_tokens=1024)
     assert result.response == "Hi!"
     assert (result.input_tokens, result.output_tokens, result.total_tokens) == (7, 2, 9)
 
 
-def test_anthropic_adapter_uses_required_headers_and_default_limit(monkeypatch) -> None:
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-secret")
+def test_anthropic_adapter_uses_required_headers_and_default_limit() -> None:
     model = model_configuration(
         "anthropic",
-        api_key_env_var="ANTHROPIC_API_KEY",
+        api_key="test-secret",
         parameters={"temperature": 0.1, "system": "must-not-win"},
     )
 
@@ -176,7 +192,7 @@ def test_anthropic_adapter_uses_required_headers_and_default_limit(monkeypatch) 
             },
         )
 
-    result = run_with_transport(model, handler)
+    result = run_with_transport(model, handler, max_output_tokens=1024)
     assert result.response == "Hello!"
     assert (
         result.input_tokens,
@@ -186,12 +202,11 @@ def test_anthropic_adapter_uses_required_headers_and_default_limit(monkeypatch) 
     assert result.finish_reason == "end_turn"
 
 
-def test_gemini_adapter_builds_generate_content_request(monkeypatch) -> None:
-    monkeypatch.setenv("GEMINI_API_KEY", "test-secret")
+def test_gemini_adapter_builds_generate_content_request() -> None:
     model = model_configuration(
         "gemini",
         model_name="models/gemini-test",
-        api_key_env_var="GEMINI_API_KEY",
+        api_key="test-secret",
         parameters={"temperature": 0.3, "maxOutputTokens": 500},
     )
 
@@ -203,7 +218,7 @@ def test_gemini_adapter_builds_generate_content_request(monkeypatch) -> None:
         assert request.headers["x-goog-api-key"] == "test-secret"
         assert request_json(request) == {
             "contents": [{"role": "user", "parts": [{"text": "Hello"}]}],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 500},
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1024},
             "systemInstruction": {"parts": [{"text": "Be concise."}]},
         }
         return httpx.Response(
@@ -223,31 +238,28 @@ def test_gemini_adapter_builds_generate_content_request(monkeypatch) -> None:
             },
         )
 
-    result = run_with_transport(model, handler)
+    result = run_with_transport(model, handler, max_output_tokens=1024)
     assert result.response == "Hi there"
     assert (result.input_tokens, result.output_tokens, result.total_tokens) == (6, 2, 8)
     assert result.finish_reason == "STOP"
 
 
-def test_configuration_errors_happen_before_provider_request(monkeypatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
+def test_configuration_errors_happen_before_provider_request() -> None:
     async def run(model):
         return await generate_prompt(model, "Hello", None)
 
-    with pytest.raises(PlaygroundConfigurationError, match="not set"):
-        asyncio.run(
-            run(model_configuration("openai", api_key_env_var="OPENAI_API_KEY"))
-        )
-    with pytest.raises(PlaygroundConfigurationError, match="require a base URL"):
+    with pytest.raises(
+        PlaygroundConfigurationError, match="requires configured credentials"
+    ):
+        asyncio.run(run(model_configuration("openai")))
+    with pytest.raises(PlaygroundConfigurationError, match="requires a base URL"):
         asyncio.run(run(model_configuration("openai_compatible")))
     with pytest.raises(PlaygroundConfigurationError, match="executable protocol"):
         asyncio.run(run(model_configuration("custom")))
 
 
-def test_provider_failures_are_normalized_without_response_body(monkeypatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "test-secret")
-    model = model_configuration("openai", api_key_env_var="OPENAI_API_KEY")
+def test_provider_failures_are_normalized_without_response_body() -> None:
+    model = model_configuration("openai", api_key="test-secret")
 
     def rejected(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -272,3 +284,22 @@ def test_provider_failures_are_normalized_without_response_body(monkeypatch) -> 
 
     with pytest.raises(PlaygroundProviderError, match="empty response"):
         run_with_transport(model, malformed)
+
+    def invalid_object(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
+    with pytest.raises(PlaygroundProviderError, match="invalid response object"):
+        run_with_transport(model, invalid_object)
+
+
+def test_provider_response_size_is_bounded() -> None:
+    model = model_configuration(
+        "ollama",
+        base_url="http://ollama.test",
+    )
+
+    def oversized(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"x" * (MAX_PROVIDER_RESPONSE_BYTES + 1))
+
+    with pytest.raises(PlaygroundProviderError, match="safe size limit"):
+        run_with_transport(model, oversized)

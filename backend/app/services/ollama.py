@@ -13,6 +13,7 @@ REQUEST_TIMEOUT_SECONDS = 120.0
 MAX_OUTPUT_TOKENS = 1_024
 MAX_PROVIDER_RESPONSE_BYTES = 1_000_000
 MAX_MODEL_NAME_LENGTH = 200
+MAX_REPORTED_TOKENS = 1_000_000_000
 
 
 class OllamaError(RuntimeError):
@@ -32,6 +33,7 @@ class OllamaResult:
     latency_ms: int
     input_tokens: int | None
     output_tokens: int | None
+    total_tokens: int | None = None
 
 
 async def generate_ollama_response(
@@ -112,17 +114,28 @@ async def generate_ollama_response(
             "Ollama returned an invalid model identifier.", code="invalid_response"
         )
 
+    input_tokens = _optional_nonnegative_int(data.get("prompt_eval_count"))
+    output_tokens = _optional_nonnegative_int(data.get("eval_count"))
     return OllamaResult(
         model=reported_model,
         response=generated_text,
         latency_ms=latency_ms,
-        input_tokens=_optional_nonnegative_int(data.get("prompt_eval_count")),
-        output_tokens=_optional_nonnegative_int(data.get("eval_count")),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=(
+            _optional_nonnegative_int(input_tokens + output_tokens)
+            if input_tokens is not None and output_tokens is not None
+            else None
+        ),
     )
 
 
 def _optional_nonnegative_int(value: object) -> int | None:
     """Return a nonnegative integer metric when Ollama supplied one."""
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+    if (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= MAX_REPORTED_TOKENS
+    ):
         return value
     return None

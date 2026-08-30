@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 from app.api import playground
-from app.models import ModelConfiguration
+from app.models import ModelConfiguration, ProviderConfiguration
 from app.services.playground import (
     PlaygroundConfigurationError,
     PlaygroundProviderError,
@@ -26,20 +26,25 @@ def add_model(
     *,
     provider: str = "ollama",
     base_url: str | None = None,
-    api_key_env_var: str | None = None,
     active: bool = True,
     parameters: dict | None = None,
 ) -> ModelConfiguration:
     async def persist() -> ModelConfiguration:
         async with session_factory() as session:
+            configured_provider = ProviderConfiguration(
+                display_name=f"{provider} provider",
+                kind=provider,
+                base_url=base_url,
+            )
+            session.add(configured_provider)
+            await session.flush()
             model = ModelConfiguration(
                 display_name="Local Gemma",
-                provider=provider,
+                provider_id=configured_provider.id,
                 model_name="gemma4:e4b",
-                base_url=base_url,
-                api_key_env_var=api_key_env_var,
                 active=active,
                 parameters=parameters or {},
+                provider=configured_provider,
             )
             session.add(model)
             await session.commit()
@@ -121,7 +126,7 @@ def test_playground_rejects_unknown_and_inactive_models(
     [
         ("custom", "executable protocol"),
         ("openai", "requires configured credentials"),
-        ("openai_compatible", "require a base URL"),
+        ("openai_compatible", "requires a base URL"),
     ],
 )
 def test_playground_rejects_models_that_cannot_execute(

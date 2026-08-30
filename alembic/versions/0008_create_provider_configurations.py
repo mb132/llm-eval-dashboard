@@ -1,7 +1,7 @@
 """Create reusable encrypted provider configurations.
 
-Revision ID: 0005_create_provider_configurations
-Revises: 0004_create_model_configurations
+Revision ID: 0008_create_provider_configurations
+Revises: 0007_add_total_tokens
 Create Date: 2026-08-30
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "0005_create_provider_configurations"
-down_revision: str | None = "0004_create_model_configurations"
+revision: str = "0008_create_provider_configurations"
+down_revision: str | None = "0007_add_total_tokens"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -110,10 +110,23 @@ def upgrade() -> None:
         batch.create_index(
             op.f("ix_model_configurations_provider_id"), ["provider_id"], unique=False
         )
+    with op.batch_alter_table("evaluation_results") as batch:
+        batch.add_column(
+            sa.Column("provider_configuration_id", sa.Integer(), nullable=True)
+        )
+    connection.execute(
+        sa.text(
+            "UPDATE evaluation_results SET provider_configuration_id = "
+            "(SELECT provider_id FROM model_configurations "
+            "WHERE model_configurations.id = CAST(evaluation_results.model_id AS INTEGER))"
+        )
+    )
 
 
 def downgrade() -> None:
     connection = op.get_bind()
+    with op.batch_alter_table("evaluation_results") as batch:
+        batch.drop_column("provider_configuration_id")
     with op.batch_alter_table("model_configurations") as batch:
         batch.drop_index(op.f("ix_model_configurations_provider_id"))
         batch.drop_constraint(

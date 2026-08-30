@@ -3,7 +3,16 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    Float,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, UTCDateTime, utc_now
@@ -81,8 +90,24 @@ class EvaluationResult(Base):
             name="input_tokens_nonnegative",
         ),
         CheckConstraint(
+            "input_tokens IS NULL OR input_tokens <= 1000000000",
+            name="input_tokens_bounded",
+        ),
+        CheckConstraint(
             "output_tokens IS NULL OR output_tokens >= 0",
             name="output_tokens_nonnegative",
+        ),
+        CheckConstraint(
+            "output_tokens IS NULL OR output_tokens <= 1000000000",
+            name="output_tokens_bounded",
+        ),
+        CheckConstraint(
+            "total_tokens IS NULL OR total_tokens >= 0",
+            name="total_tokens_nonnegative",
+        ),
+        CheckConstraint(
+            "total_tokens IS NULL OR total_tokens <= 1000000000",
+            name="total_tokens_bounded",
         ),
     )
 
@@ -98,6 +123,10 @@ class EvaluationResult(Base):
     model_id: Mapped[str] = mapped_column(String(100), nullable=False)
     model_provider: Mapped[str] = mapped_column(String(50), nullable=False)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    provider_configuration_id: Mapped[int | None] = mapped_column()
+    provider_model_name: Mapped[str | None] = mapped_column(String(300))
+    model_base_url: Mapped[str | None] = mapped_column(String(2000))
+    model_parameters: Mapped[dict[str, object] | None] = mapped_column(JSON)
     reported_model_name: Mapped[str | None] = mapped_column(String(200))
     prompt_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     prompt_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
@@ -115,9 +144,49 @@ class EvaluationResult(Base):
     latency_ms: Mapped[int | None] = mapped_column()
     input_tokens: Mapped[int | None] = mapped_column()
     output_tokens: Mapped[int | None] = mapped_column()
+    total_tokens: Mapped[int | None] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), nullable=False, default=utc_now
     )
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     evaluation: Mapped[EvaluationRun] = relationship(back_populates="results")
+    quality_scores: Mapped[list["EvaluationQualityScore"]] = relationship(
+        back_populates="result",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class EvaluationQualityScore(Base):
+    """One versioned quality metric assigned to an evaluation result."""
+
+    __tablename__ = "evaluation_quality_scores"
+    __table_args__ = (
+        UniqueConstraint(
+            "result_id",
+            "method",
+            "metric_version",
+            name="uq_quality_scores_result_method_version",
+        ),
+        CheckConstraint("metric_version >= 1", name="metric_version_positive"),
+        CheckConstraint(
+            "score IS NULL OR (score >= 0 AND score <= 1)",
+            name="score_valid",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    result_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("evaluation_results.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    method: Mapped[str] = mapped_column(String(50), nullable=False)
+    metric_version: Mapped[int] = mapped_column(nullable=False)
+    score: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=utc_now
+    )
+    result: Mapped[EvaluationResult] = relationship(back_populates="quality_scores")
