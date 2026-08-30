@@ -22,6 +22,7 @@ from ..models import (
     PromptVersion,
 )
 from ..models.base import utc_now
+from ..schemas.models import validate_model_parameters
 from .evaluation_configuration import (
     EvaluationConfigurationError,
     ModelOption,
@@ -45,6 +46,13 @@ MAX_CONCURRENT_MODEL_REQUESTS = 4
 MAX_ERROR_MESSAGE_LENGTH = 500
 DEFAULT_RESULT_PAGE_SIZE = 50
 MAX_RESULT_PAGE_SIZE = 100
+OUTPUT_TOKEN_PARAMETER_BY_PROVIDER = {
+    "ollama": "num_predict",
+    "openai": "max_completion_tokens",
+    "openai_compatible": "max_tokens",
+    "anthropic": "max_tokens",
+    "gemini": "maxOutputTokens",
+}
 
 type ProviderCall = Callable[..., Awaitable[OllamaResult]]
 
@@ -74,6 +82,7 @@ class _ExecutionSnapshot:
     provider: str
     model: str
     prompt: str
+    max_output_tokens: int
     configuration: "_ModelConfigurationSnapshot | None"
 
 
@@ -89,20 +98,6 @@ class _ModelConfigurationSnapshot:
     api_key_env_var: str | None
     parameters: dict[str, Any]
 
-    @classmethod
-    def from_model(
-        cls, model: ModelConfiguration
-    ) -> "_ModelConfigurationSnapshot":
-        return cls(
-            id=model.id,
-            display_name=model.display_name,
-            provider=model.provider,
-            model_name=model.model_name,
-            base_url=model.base_url,
-            api_key_env_var=model.api_key_env_var,
-            parameters=dict(model.parameters),
-        )
-
     def to_model(self) -> ModelConfiguration:
         return ModelConfiguration(
             id=self.id,
@@ -113,6 +108,23 @@ class _ModelConfigurationSnapshot:
             api_key_env_var=self.api_key_env_var,
             parameters=dict(self.parameters),
             active=True,
+        )
+
+    @classmethod
+    def from_result(
+        cls, result: EvaluationResult
+    ) -> "_ModelConfigurationSnapshot | None":
+        """Restore a new-run snapshot while tolerating legacy stored results."""
+        if result.provider_model_name is None or result.model_parameters is None:
+            return None
+        return cls(
+            id=int(result.model_id),
+            display_name=result.model_name,
+            provider=result.model_provider,
+            model_name=result.provider_model_name,
+            base_url=result.model_base_url,
+            api_key_env_var=result.model_api_key_env_var,
+            parameters=dict(result.model_parameters),
         )
 
 
@@ -151,7 +163,34 @@ async def create_evaluation_run(
     prompts_by_id = {
         version.id: (version, prompt_name) for version, prompt_name in prompt_rows
     }
-    models_by_id = {model.id: model for model in models}
+    configured_model_ids = [
+        int(model_id) for model_id in preview.model_ids if model_id.isdigit()
+    ]
+    configured_models = list(
+        await session.scalars(
+            select(ModelConfiguration).where(
+                ModelConfiguration.id.in_(configured_model_ids),
+                ModelConfiguration.active.is_(True),
+                ModelConfiguration.provider != "custom",
+            )
+        )
+    )
+    configurations_by_id = {str(model.id): model for model in configured_models}
+    if set(configurations_by_id) != set(preview.model_ids):
+        raise EvaluationConfigurationError(
+            "One or more selected models are no longer available."
+        )
+    try:
+        max_output_tokens_by_id: dict[str, int] = {}
+        for model in configured_models:
+            validate_model_parameters(model.parameters)
+            max_output_tokens_by_id[str(model.id)] = _evaluation_output_token_limit(
+                model
+            )
+    except ValueError as exc:
+        raise EvaluationConfigurationError(
+            "One or more selected models contain invalid parameters."
+        ) from exc
 
     evaluation = EvaluationRun(
         status="pending",
@@ -162,7 +201,7 @@ async def create_evaluation_run(
     )
     sequence_number = 1
     for model_id in model_ids:
-        model = models_by_id[model_id]
+        model = configurations_by_id[model_id]
         for prompt_version_id in prompt_version_ids:
             version, prompt_name = prompts_by_id[prompt_version_id]
             for test_case in dataset.test_cases:
@@ -174,16 +213,20 @@ async def create_evaluation_run(
                         EvaluationResult(
                             sequence_number=sequence_number,
                             status="pending",
-                            model_id=model.id,
+                            model_id=str(model.id),
                             model_provider=model.provider,
-                            model_name=model.name,
+                            model_name=model.display_name,
+                            provider_model_name=model.model_name,
+                            model_base_url=model.base_url,
+                            model_api_key_env_var=model.api_key_env_var,
+                            model_parameters=dict(model.parameters),
                             prompt_id=version.prompt_id,
                             prompt_version_id=version.id,
                             prompt_name=prompt_name,
                             prompt_version_number=version.version_number,
                             test_case_id=test_case.id,
                             repetition=repetition,
-                            max_output_tokens=MAX_OUTPUT_TOKENS,
+                            max_output_tokens=max_output_tokens_by_id[model_id],
                             rendered_prompt=rendered_prompt,
                             test_input=test_case.input,
                             expected_output=test_case.expected_answer,
@@ -317,35 +360,16 @@ async def _start_run(
         evaluation = (await session.scalars(statement)).one_or_none()
         if evaluation is None or evaluation.status != "pending":
             return None
-        configured_model_ids = {
-            int(result.model_id)
-            for result in evaluation.results
-            if result.model_id.isdigit()
-        }
-        configured_models = (
-            list(
-                await session.scalars(
-                    select(ModelConfiguration).where(
-                        ModelConfiguration.id.in_(configured_model_ids)
-                    )
-                )
-            )
-            if configured_model_ids
-            else []
-        )
-        configurations_by_id = {
-            str(model.id): _ModelConfigurationSnapshot.from_model(model)
-            for model in configured_models
-        }
         evaluation.status = "running"
         evaluation.started_at = utc_now()
         return [
             _ExecutionSnapshot(
                 result_id=result.id,
                 provider=result.model_provider,
-                model=result.model_name,
+                model=result.provider_model_name or result.model_name,
                 prompt=result.rendered_prompt,
-                configuration=configurations_by_id.get(result.model_id),
+                max_output_tokens=result.max_output_tokens,
+                configuration=_ModelConfigurationSnapshot.from_result(result),
             )
             for result in sorted(
                 evaluation.results, key=lambda item: item.sequence_number
@@ -373,6 +397,7 @@ async def _execute_result(
                     snapshot.configuration.to_model(),
                     snapshot.prompt,
                     None,
+                    max_output_tokens=snapshot.max_output_tokens,
                     client=client,
                 )
                 outcome = OllamaResult(
@@ -536,3 +561,22 @@ async def _fail_run(
         evaluation.status = "failed"
         evaluation.failure_message = message
         evaluation.completed_at = now
+
+
+def _evaluation_output_token_limit(model: ModelConfiguration) -> int:
+    """Return a valid configured limit capped for bounded evaluation cost."""
+    parameter_name = OUTPUT_TOKEN_PARAMETER_BY_PROVIDER.get(model.provider)
+    if parameter_name is None:
+        raise ValueError("The configured provider is not executable.")
+    configured = model.parameters.get(parameter_name)
+    if configured is None and model.provider == "openai":
+        configured = model.parameters.get("max_tokens")
+    if configured is None:
+        return MAX_OUTPUT_TOKENS
+    if (
+        not isinstance(configured, int)
+        or isinstance(configured, bool)
+        or configured < 1
+    ):
+        raise ValueError("The configured output token limit must be positive.")
+    return min(configured, MAX_OUTPUT_TOKENS)

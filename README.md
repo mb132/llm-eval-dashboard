@@ -52,9 +52,12 @@ After reviewing a configuration, start the evaluation from the same page. The
 server persists its inputs first, processes up to four model requests in the
 background, and opens a progress page that can be refreshed safely. Individual
 request failures remain visible without stopping the rest of the run. This is a
-local single-process worker: a server restart marks unfinished work as failed
-instead of replaying requests whose provider-side outcome is unknown. Quality
-scores and cost estimates are intentionally added by later features.
+local single-process worker. Each request stores the effective model
+configuration before execution and limits generated output to at most 1,024
+tokens. Later model edits therefore do not rewrite a run. A server restart marks
+unfinished work as failed instead of replaying requests whose provider-side
+outcome is unknown. Quality scores and cost estimates are intentionally added by
+later features.
 
 The application has no authentication or tenant isolation and is intended for
 trusted local/demo use only. Do not expose it publicly or store confidential

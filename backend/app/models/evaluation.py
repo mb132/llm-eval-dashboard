@@ -3,7 +3,15 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, UTCDateTime, utc_now
@@ -98,6 +106,10 @@ class EvaluationResult(Base):
     model_id: Mapped[str] = mapped_column(String(100), nullable=False)
     model_provider: Mapped[str] = mapped_column(String(50), nullable=False)
     model_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    provider_model_name: Mapped[str | None] = mapped_column(String(300))
+    model_base_url: Mapped[str | None] = mapped_column(String(2000))
+    model_api_key_env_var: Mapped[str | None] = mapped_column(String(200))
+    model_parameters: Mapped[dict[str, object] | None] = mapped_column(JSON)
     reported_model_name: Mapped[str | None] = mapped_column(String(200))
     prompt_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     prompt_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)

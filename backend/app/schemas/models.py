@@ -1,5 +1,6 @@
 """Validation schemas for model configuration endpoints."""
 
+import json
 import re
 from datetime import datetime
 from enum import StrEnum
@@ -8,6 +9,7 @@ from typing import Any, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ENV_VAR_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+MAX_PARAMETERS_JSON_BYTES = 20_000
 
 
 class ProviderType(StrEnum):
@@ -52,6 +54,24 @@ def validate_provider_settings(
         raise ValueError("This provider does not support a custom base URL.")
 
 
+def validate_model_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
+    """Require a bounded, portable JSON object for provider parameters."""
+    try:
+        serialized = json.dumps(
+            parameters,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("parameters must contain valid finite JSON values") from exc
+    if len(serialized) > MAX_PARAMETERS_JSON_BYTES:
+        raise ValueError(
+            f"parameters must serialize to at most {MAX_PARAMETERS_JSON_BYTES} bytes"
+        )
+    return parameters
+
+
 class ModelConfigurationBase(BaseModel):
     """Fields shared by create requests and stored model configurations."""
 
@@ -79,6 +99,11 @@ class ModelConfigurationBase(BaseModel):
         if value is None:
             return None
         return value.strip() or None
+
+    @field_validator("parameters")
+    @classmethod
+    def validate_parameters(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return validate_model_parameters(value)
 
     @model_validator(mode="after")
     def validate_environment_variable(self) -> Self:
@@ -132,6 +157,13 @@ class ModelConfigurationUpdate(BaseModel):
         if value and not ENV_VAR_PATTERN.fullmatch(value):
             raise ValueError("must be a valid environment variable name")
         return value
+
+    @field_validator("parameters")
+    @classmethod
+    def validate_parameters(cls, value: dict[str, Any] | None) -> dict[str, Any]:
+        if value is None:
+            raise ValueError("must not be null")
+        return validate_model_parameters(value)
 
 
 class ModelConfigurationResponse(ModelConfigurationBase):

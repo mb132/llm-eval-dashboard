@@ -18,6 +18,13 @@ def table_names(database_path: Path) -> set[str]:
     return {row[0] for row in rows}
 
 
+def column_names(database_path: Path, table: str) -> set[str]:
+    """Return column names for one migrated SQLite table."""
+    with sqlite3.connect(database_path) as connection:
+        rows = connection.execute(f'PRAGMA table_info("{table}")').fetchall()
+    return {row[1] for row in rows}
+
+
 def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
     """Verify the complete schema migration lifecycle on a disposable database."""
     database_path = tmp_path / "migration.db"
@@ -37,6 +44,12 @@ def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
         "prompts",
         "test_cases",
     }
+    assert {
+        "provider_model_name",
+        "model_base_url",
+        "model_api_key_env_var",
+        "model_parameters",
+    } <= column_names(database_path, "evaluation_results")
 
     command.downgrade(config, "base")
     assert table_names(database_path) == {"alembic_version"}

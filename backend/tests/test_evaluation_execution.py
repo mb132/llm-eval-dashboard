@@ -4,7 +4,7 @@ import asyncio
 from uuid import UUID
 
 from app.api import evaluations
-from app.models import EvaluationResult
+from app.models import EvaluationResult, ModelConfiguration
 from app.services.evaluation_execution import (
     execute_evaluation_run,
     fail_interrupted_runs,
@@ -115,6 +115,10 @@ def test_start_persists_complete_immutable_request_plan(
     assert all("{{input}}" not in item.rendered_prompt for item in stored)
     assert stored[0].expected_output == "Paris"
     assert stored[0].max_output_tokens == 1024
+    assert stored[0].provider_model_name == "test-model:latest"
+    assert stored[0].model_base_url == "http://localhost:11434"
+    assert stored[0].model_api_key_env_var is None
+    assert stored[0].model_parameters == {}
 
     first_page = prompt_client.get(f"/api/evaluations/{run['id']}/results?limit=1")
     assert first_page.status_code == 200
@@ -181,18 +185,38 @@ def test_execution_uses_the_persisted_model_configuration(
     """Dispatch evaluation requests through the selected configured model."""
     disable_background_execution(monkeypatch)
     version_id, dataset_id = create_inputs(prompt_client, second_case=False)
+    configured = prompt_client.patch(
+        "/api/models/1",
+        json={"parameters": {"num_predict": 500}},
+    )
+    assert configured.status_code == 200
     run = prompt_client.post(
         "/api/evaluations", json=configuration(version_id, dataset_id)
     ).json()
 
-    async def fake_generate(model, prompt, system_prompt, *, client):
+    updated = prompt_client.patch(
+        "/api/models/1",
+        json={
+            "display_name": "Changed model",
+            "model_name": "changed-model:latest",
+            "base_url": "http://changed.test:11434",
+            "parameters": {"temperature": 0.9},
+            "active": False,
+        },
+    )
+    assert updated.status_code == 200
+    assert prompt_client.delete("/api/models/1").status_code == 204
+
+    async def fake_generate(model, prompt, system_prompt, *, max_output_tokens, client):
         assert model.id == 1
         assert model.display_name == "Local model"
         assert model.provider == "ollama"
         assert model.model_name == "test-model:latest"
         assert model.base_url == "http://localhost:11434"
+        assert model.parameters == {"num_predict": 500}
         assert prompt == "Answer this exactly: Capital of France?"
         assert system_prompt is None
+        assert max_output_tokens == 500
         assert client is not None
         return PlaygroundResult(
             response="Paris",
@@ -218,6 +242,53 @@ def test_execution_uses_the_persisted_model_configuration(
     assert results["items"][0]["status"] == "succeeded"
     assert results["items"][0]["generated_output"] == "Paris"
     assert results["items"][0]["reported_model_name"] == "test-model:latest"
+
+
+def test_start_rejects_invalid_legacy_model_parameters(
+    prompt_client: TestClient,
+    evaluation_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Revalidate configurations that may predate the current API boundary."""
+    disable_background_execution(monkeypatch)
+    version_id, dataset_id = create_inputs(prompt_client, second_case=False)
+
+    async def corrupt_parameters() -> None:
+        async with evaluation_session_factory() as session:
+            model = await session.get(ModelConfiguration, 1)
+            assert model is not None
+            model.parameters = {"value": "x" * 20_000}
+            await session.commit()
+
+    asyncio.run(corrupt_parameters())
+
+    response = prompt_client.post(
+        "/api/evaluations", json=configuration(version_id, dataset_id)
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "One or more selected models contain invalid parameters."
+    )
+
+
+def test_start_caps_configured_output_tokens(
+    prompt_client: TestClient,
+    monkeypatch,
+) -> None:
+    """Persist the bounded value that will be sent to the provider."""
+    disable_background_execution(monkeypatch)
+    version_id, dataset_id = create_inputs(prompt_client, second_case=False)
+    updated = prompt_client.patch(
+        "/api/models/1",
+        json={"parameters": {"num_predict": 5_000}},
+    )
+    assert updated.status_code == 200
+
+    run = prompt_client.post(
+        "/api/evaluations", json=configuration(version_id, dataset_id)
+    ).json()
+    results = prompt_client.get(f"/api/evaluations/{run['id']}/results").json()
+    assert results["items"][0]["max_output_tokens"] == 1_024
 
 
 def test_unexpected_execution_error_fails_run_without_leaking_details(

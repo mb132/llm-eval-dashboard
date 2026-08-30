@@ -136,6 +136,21 @@ def test_invalid_provider_and_environment_variable_are_rejected(
     assert "actual-secret-value!" not in os.environ
 
 
+def test_model_parameters_are_bounded(client: TestClient) -> None:
+    response = client.post(
+        "/api/models",
+        json={
+            "display_name": "Oversized",
+            "provider": "ollama",
+            "model_name": "test-model",
+            "parameters": {"value": "x" * 20_000},
+        },
+    )
+
+    assert response.status_code == 422
+    assert "at most 20000 bytes" in response.text
+
+
 @pytest.mark.parametrize(
     "payload",
     [
