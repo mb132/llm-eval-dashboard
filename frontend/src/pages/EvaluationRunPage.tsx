@@ -14,13 +14,16 @@ import {
   getEvaluationResults,
   getEvaluationRun,
   getEvaluationQualitySummary,
+  getEvaluationSecuritySummary,
   getEvaluationPerformanceSummary,
   getEvaluationCostSummary,
   type EvaluationCostSummary,
   type EvaluationPerformanceSummary,
   type EvaluationResult,
   type EvaluationQualitySummary,
+  type EvaluationSecuritySummary,
   type QualityAggregate,
+  type SecurityAggregate,
   type EvaluationRun,
   type EvaluationRunStatus,
 } from "@/api/evaluations"
@@ -44,6 +47,8 @@ export function EvaluationRunPage() {
   const [resultTotal, setResultTotal] = useState(0)
   const [qualitySummary, setQualitySummary] =
     useState<EvaluationQualitySummary | null>(null)
+  const [securitySummary, setSecuritySummary] =
+    useState<EvaluationSecuritySummary | null>(null)
   const [performanceSummary, setPerformanceSummary] =
     useState<EvaluationPerformanceSummary | null>(null)
   const [costSummary, setCostSummary] =
@@ -69,19 +74,21 @@ export function EvaluationRunPage() {
           getEvaluationRun(id),
           getEvaluationResults(id, 0, RESULT_PAGE_SIZE),
         ])
-        const [quality, performance, costs] =
+        const [quality, security, performance, costs] =
           run.status === "completed" || run.status === "failed"
             ? await Promise.all([
                 getEvaluationQualitySummary(id),
+                getEvaluationSecuritySummary(id),
                 getEvaluationPerformanceSummary(id),
                 getEvaluationCostSummary(id),
               ])
-            : [null, null, null]
+            : [null, null, null, null]
         if (!active) return
         setEvaluation(run)
         setResults(page.items)
         setResultTotal(page.total)
         if (quality) setQualitySummary(quality)
+        if (security) setSecuritySummary(security)
         if (performance) setPerformanceSummary(performance)
         if (costs) setCostSummary(costs)
         setError(null)
@@ -211,6 +218,9 @@ export function EvaluationRunPage() {
       </Card>
 
       {qualitySummary && <QualitySummary summary={qualitySummary} />}
+      {securitySummary && securitySummary.overall.total_tests > 0 && (
+        <SecuritySummary summary={securitySummary} />
+      )}
       {performanceSummary && <PerformanceSummary summary={performanceSummary} />}
       {costSummary && <CostSummary summary={costSummary} />}
 
@@ -355,6 +365,16 @@ function ResultCard({ result }: { result: EvaluationResult }) {
               {result.prompt_name} · Version {result.prompt_version_number} ·
               Repetition {result.repetition}
             </CardDescription>
+            {result.case_type === "security" && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Badge variant="outline">Security test</Badge>
+                {result.security_test_type && (
+                  <Badge variant="outline">
+                    {securityTypeLabel(result.security_test_type)}
+                  </Badge>
+                )}
+              </div>
+            )}
           </div>
           <ResultStatus status={result.status} />
         </div>
@@ -363,7 +383,14 @@ function ResultCard({ result }: { result: EvaluationResult }) {
         <div className="grid gap-4 md:grid-cols-2">
           <TextValue label="Rendered prompt" value={result.rendered_prompt} />
           <TextValue label="Input" value={result.test_input} />
-          <TextValue label="Expected output" value={result.expected_output} />
+          <TextValue
+            label={
+              result.case_type === "security"
+                ? "Failure marker"
+                : "Expected output"
+            }
+            value={result.expected_output}
+          />
         </div>
         {result.status === "succeeded" && (
           <TextValue
@@ -408,26 +435,42 @@ function ResultCard({ result }: { result: EvaluationResult }) {
             )}
           </p>
         )}
-        <div className="border-t pt-4">
-          <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Quality
-          </h4>
-          {result.quality_scores.length === 0 ? (
-            <p className="mt-2 text-sm text-muted-foreground">
-              Quality scores unavailable for this historical result.
+        {result.case_type === "security" ? (
+          <div className="border-t pt-4">
+            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Security assessment
+            </h4>
+            <p className="mt-2">
+              <SecurityStatus status={result.security_status} />
+              {result.security_metric_version !== null && (
+                <span className="ml-2 text-xs text-muted-foreground">
+                  Rule version {result.security_metric_version}
+                </span>
+              )}
             </p>
-          ) : (
-            <dl className="mt-2 grid gap-3 sm:grid-cols-2">
-              {result.quality_scores.map((quality) => (
-                <Metric
-                  key={`${quality.method}-${quality.version}`}
-                  label={`${qualityMetricLabel(quality.method)} v${quality.version}`}
-                  value={formatQualityScore(quality.score)}
-                />
-              ))}
-            </dl>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="border-t pt-4">
+            <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Quality
+            </h4>
+            {result.quality_scores.length === 0 ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Quality scores unavailable for this historical result.
+              </p>
+            ) : (
+              <dl className="mt-2 grid gap-3 sm:grid-cols-2">
+                {result.quality_scores.map((quality) => (
+                  <Metric
+                    key={`${quality.method}-${quality.version}`}
+                    label={`${qualityMetricLabel(quality.method)} v${quality.version}`}
+                    value={formatQualityScore(quality.score)}
+                  />
+                ))}
+              </dl>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -458,6 +501,20 @@ function ResultStatus({ status }: { status: EvaluationResult["status"] }) {
       {status === "running" ? "Running" : "Pending"}
     </span>
   )
+}
+
+function SecurityStatus({
+  status,
+}: {
+  status: EvaluationResult["security_status"]
+}) {
+  if (status === "passed") {
+    return <span className="font-medium text-green-800">Passed</span>
+  }
+  if (status === "failed") {
+    return <span className="font-medium text-red-800">Failed</span>
+  }
+  return <span className="font-medium text-muted-foreground">Unavailable</span>
 }
 
 function TextValue({
@@ -586,6 +643,94 @@ function formatUsd(value: string | null) {
   return `$${whole}.${fraction}`
 }
 
+function SecuritySummary({ summary }: { summary: EvaluationSecuritySummary }) {
+  return (
+    <Card className="shadow-sm">
+      <CardHeader>
+        <CardTitle>
+          <h2>Security score</h2>
+        </CardTitle>
+        <CardDescription>
+          Deterministic forbidden-marker checks. Unavailable executions remain
+          visible and count in the denominator as not passed.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div>
+          <p className="text-3xl font-semibold">
+            {formatQualityScore(summary.overall.score)}
+          </p>
+          <SecurityCounts aggregate={summary.overall} />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Rule version {summary.metric_version}
+          </p>
+        </div>
+        <SecurityBreakdown
+          title="By model"
+          rows={summary.by_model.map((item) => ({
+            key: item.model_id,
+            label: item.model_name,
+            aggregate: item,
+          }))}
+        />
+        <SecurityBreakdown
+          title="By prompt version"
+          rows={summary.by_prompt_version.map((item) => ({
+            key: item.prompt_version_id,
+            label: `${item.prompt_name} · Version ${item.prompt_version_number}`,
+            aggregate: item,
+          }))}
+        />
+      </CardContent>
+    </Card>
+  )
+}
+
+function SecurityBreakdown({
+  title,
+  rows,
+}: {
+  title: string
+  rows: Array<{ key: string; label: string; aggregate: SecurityAggregate }>
+}) {
+  return (
+    <div>
+      <h3 className="text-sm font-medium">{title}</h3>
+      <dl className="mt-2 space-y-2">
+        {rows.map((row) => (
+          <div
+            key={row.key}
+            className="flex items-start justify-between gap-4 rounded-lg bg-muted p-3"
+          >
+            <dt className="text-sm">{row.label}</dt>
+            <dd className="text-right text-sm font-semibold">
+              {formatQualityScore(row.aggregate.score)}
+              <SecurityCounts aggregate={row.aggregate} compact />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+function SecurityCounts({
+  aggregate,
+  compact = false,
+}: {
+  aggregate: SecurityAggregate
+  compact?: boolean
+}) {
+  return (
+    <span
+      className={`${compact ? "block" : "mt-1 block"} text-xs font-normal text-muted-foreground`}
+    >
+      {aggregate.passed_tests} passed · {aggregate.failed_tests} failed ·{" "}
+      {aggregate.unavailable_tests} unavailable · {aggregate.total_tests} total
+    </span>
+  )
+}
+
 function QualitySummary({ summary }: { summary: EvaluationQualitySummary }) {
   return (
     <section className="space-y-4" aria-labelledby="quality-heading">
@@ -688,6 +833,10 @@ function qualityMetricLabel(method: string) {
     normalized_contains_match: "Normalized contains match",
   }
   return labels[method] ?? method
+}
+
+function securityTypeLabel(value: string) {
+  return value.replaceAll("_", " ")
 }
 
 function formatQualityScore(value: number | null) {

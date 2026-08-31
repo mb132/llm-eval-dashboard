@@ -12,6 +12,7 @@ import type {
   EvaluationQualitySummary,
   EvaluationResult,
   EvaluationRun,
+  EvaluationSecuritySummary,
 } from "@/api/evaluations"
 
 const RUN_ID = "fe90806e-cf08-4d63-9b60-cc47a46ee0ec"
@@ -104,6 +105,19 @@ const qualitySummary: EvaluationQualitySummary = {
   ],
 }
 
+const securitySummary: EvaluationSecuritySummary = {
+  metric_version: 1,
+  overall: {
+    score: null,
+    total_tests: 0,
+    passed_tests: 0,
+    failed_tests: 0,
+    unavailable_tests: 0,
+  },
+  by_model: [],
+  by_prompt_version: [],
+}
+
 const performanceSummary: EvaluationPerformanceSummary = {
   latency: {
     average_ms: 120,
@@ -161,6 +175,10 @@ const result: EvaluationResult = {
   prompt_name: "Knowledge prompt",
   prompt_version_number: 1,
   test_case_id: "f0d638d3-3545-4890-be30-8f026fc967a2",
+  case_type: "standard",
+  security_test_type: null,
+  security_metric_version: null,
+  security_status: null,
   repetition: 1,
   max_output_tokens: 1024,
   rendered_prompt: "Answer exactly: Capital of France?",
@@ -227,6 +245,7 @@ describe("evaluation execution", () => {
         jsonResponse({ items: [result], total: 1, offset: 0, limit: 50 }),
       )
       .mockResolvedValueOnce(jsonResponse(qualitySummary))
+      .mockResolvedValueOnce(jsonResponse(securitySummary))
       .mockResolvedValueOnce(jsonResponse(performanceSummary))
       .mockResolvedValueOnce(jsonResponse(costSummary))
     renderApp("/")
@@ -308,6 +327,7 @@ describe("evaluation execution", () => {
         jsonResponse({ items: [first], total: 2, offset: 0, limit: 50 }),
       )
       .mockResolvedValueOnce(jsonResponse(qualitySummary))
+      .mockResolvedValueOnce(jsonResponse(securitySummary))
       .mockResolvedValueOnce(jsonResponse(performanceSummary))
       .mockResolvedValueOnce(jsonResponse(costSummary))
       .mockResolvedValueOnce(
@@ -327,5 +347,49 @@ describe("evaluation execution", () => {
     expect(screen.getByRole("heading", { name: "Estimated costs" })).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Load more results" }))
     await waitFor(() => expect(screen.getByText("2 + 2?")).toBeInTheDocument())
+  })
+
+  it("shows security outcomes and the conservative denominator", async () => {
+    const assessed = {
+      ...result,
+      case_type: "security" as const,
+      security_test_type: "direct_prompt_injection" as const,
+      security_metric_version: 1,
+      security_status: "failed" as const,
+      expected_output: "SECURITY_TEST_FAILED",
+      generated_output: "SECURITY_TEST_FAILED",
+      quality_scores: [],
+    }
+    const summary: EvaluationSecuritySummary = {
+      metric_version: 1,
+      overall: {
+        score: 1 / 3,
+        total_tests: 3,
+        passed_tests: 1,
+        failed_tests: 1,
+        unavailable_tests: 1,
+      },
+      by_model: [],
+      by_prompt_version: [],
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(completedRun))
+      .mockResolvedValueOnce(
+        jsonResponse({ items: [assessed], total: 1, offset: 0, limit: 50 }),
+      )
+      .mockResolvedValueOnce(jsonResponse(qualitySummary))
+      .mockResolvedValueOnce(jsonResponse(summary))
+      .mockResolvedValueOnce(jsonResponse(performanceSummary))
+      .mockResolvedValueOnce(jsonResponse(costSummary))
+    renderApp(`/evaluations/${RUN_ID}`)
+
+    expect(
+      await screen.findByRole("heading", { name: "Security score" }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText("1 passed · 1 failed · 1 unavailable · 3 total"),
+    ).toBeInTheDocument()
+    expect(screen.getByText("Failure marker")).toBeInTheDocument()
+    expect(screen.getByText("Failed")).toBeInTheDocument()
   })
 })

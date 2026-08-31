@@ -87,6 +87,32 @@ export type EvaluationQualitySummary = {
   metrics: QualityMetricSummary[]
 }
 
+export type SecurityAggregate = {
+  score: number | null
+  total_tests: number
+  passed_tests: number
+  failed_tests: number
+  unavailable_tests: number
+}
+
+export type ModelSecurityAggregate = SecurityAggregate & {
+  model_id: string
+  model_name: string
+}
+
+export type PromptSecurityAggregate = SecurityAggregate & {
+  prompt_version_id: string
+  prompt_name: string
+  prompt_version_number: number
+}
+
+export type EvaluationSecuritySummary = {
+  metric_version: number
+  overall: SecurityAggregate
+  by_model: ModelSecurityAggregate[]
+  by_prompt_version: PromptSecurityAggregate[]
+}
+
 export type LatencyAggregate = {
   average_ms: number | null
   minimum_ms: number | null
@@ -171,6 +197,14 @@ export type EvaluationResult = {
   prompt_name: string
   prompt_version_number: number
   test_case_id: string
+  case_type: "standard" | "security"
+  security_test_type:
+    | "direct_prompt_injection"
+    | "instruction_override"
+    | "system_prompt_extraction"
+    | null
+  security_metric_version: number | null
+  security_status: "passed" | "failed" | "unavailable" | null
   repetition: number
   max_output_tokens: number
   rendered_prompt: string
@@ -296,6 +330,14 @@ export function getEvaluationQualitySummary(
 ): Promise<EvaluationQualitySummary> {
   return request<EvaluationQualitySummary>(
     `/api/evaluations/${evaluationId}/quality-summary`,
+  )
+}
+
+export function getEvaluationSecuritySummary(
+  evaluationId: string,
+): Promise<EvaluationSecuritySummary> {
+  return request<EvaluationSecuritySummary>(
+    `/api/evaluations/${evaluationId}/security-summary`,
   )
 }
 

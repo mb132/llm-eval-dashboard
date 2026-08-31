@@ -112,6 +112,13 @@ def _score_join(metric: QualityMetricDefinition):
     )
 
 
+def _standard_result_filter(evaluation_id: UUID):
+    return (
+        EvaluationResult.evaluation_id == evaluation_id,
+        EvaluationResult.case_type == "standard",
+    )
+
+
 def _aggregate(average: float | None, scored: int, total: int) -> QualityAggregate:
     return QualityAggregate(
         average_score=float(average) if average is not None else None,
@@ -133,7 +140,7 @@ async def _overall_aggregate(
         )
         .select_from(EvaluationResult)
         .outerjoin(EvaluationQualityScore, _score_join(metric))
-        .where(EvaluationResult.evaluation_id == evaluation_id)
+        .where(*_standard_result_filter(evaluation_id))
     )
     average, scored, total = (await session.execute(statement)).one()
     return _aggregate(average, scored, total)
@@ -154,7 +161,7 @@ async def _model_aggregates(
         )
         .select_from(EvaluationResult)
         .outerjoin(EvaluationQualityScore, _score_join(metric))
-        .where(EvaluationResult.evaluation_id == evaluation_id)
+        .where(*_standard_result_filter(evaluation_id))
         .group_by(EvaluationResult.model_id, EvaluationResult.model_name)
         .order_by(EvaluationResult.model_name, EvaluationResult.model_id)
     )
@@ -186,7 +193,7 @@ async def _prompt_aggregates(
         )
         .select_from(EvaluationResult)
         .outerjoin(EvaluationQualityScore, _score_join(metric))
-        .where(EvaluationResult.evaluation_id == evaluation_id)
+        .where(*_standard_result_filter(evaluation_id))
         .group_by(
             EvaluationResult.prompt_version_id,
             EvaluationResult.prompt_name,

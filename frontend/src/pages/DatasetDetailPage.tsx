@@ -376,6 +376,14 @@ function TestCaseCard({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <Badge variant="secondary">Case {index + 1}</Badge>
+          <Badge variant={testCase.case_type === "security" ? "outline" : "secondary"}>
+            {testCase.case_type === "security" ? "Security" : "Standard"}
+          </Badge>
+          {testCase.security_test_type && (
+            <Badge variant="outline">
+              {securityTypeLabel(testCase.security_test_type)}
+            </Badge>
+          )}
           {testCase.category && <Badge variant="outline">{testCase.category}</Badge>}
         </div>
         {!isEditing && (
@@ -406,7 +414,7 @@ function TestCaseCard({
       {isEditing ? (
         <div className="mt-5 border-t pt-5">
           <TestCaseForm
-            initial={{ input: testCase.input, expected_answer: testCase.expected_answer, category: testCase.category, metadata: testCase.metadata }}
+            initial={{ input: testCase.input, expected_answer: testCase.expected_answer, case_type: testCase.case_type, security_test_type: testCase.security_test_type, category: testCase.category, metadata: testCase.metadata }}
             submitLabel="Save test case"
             busy={isSaving}
             error={error}
@@ -417,7 +425,10 @@ function TestCaseCard({
       ) : (
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <TextBlock label="Input" value={testCase.input} />
-          <TextBlock label="Expected answer" value={testCase.expected_answer} />
+          <TextBlock
+            label={testCase.case_type === "security" ? "Failure marker" : "Expected answer"}
+            value={testCase.expected_answer}
+          />
           {testCase.metadata && Object.keys(testCase.metadata).length > 0 && (
             <div className="md:col-span-2">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Metadata</h3>
@@ -442,6 +453,10 @@ function TextBlock({ label, value }: { label: string; value: string }) {
 function formatMetadataValue(value: string | number | boolean | null) {
   if (value === null) return "null"
   return String(value)
+}
+
+function securityTypeLabel(value: string) {
+  return value.replaceAll("_", " ")
 }
 
 function BackLink() {

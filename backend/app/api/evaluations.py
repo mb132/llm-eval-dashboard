@@ -62,6 +62,12 @@ from ..services.quality import (
     QualityMetricSummary,
     get_quality_summary,
 )
+from ..services.security import (
+    SecurityAggregate,
+    SecurityEvaluationNotFoundError,
+    SecuritySummary,
+    get_security_summary,
+)
 
 router = APIRouter(prefix="/api/evaluations", tags=["evaluations"])
 QUALITY_METRIC_ORDER = {
@@ -197,6 +203,10 @@ class EvaluationResultResponse(BaseModel):
     prompt_name: str
     prompt_version_number: int
     test_case_id: UUID
+    case_type: str
+    security_test_type: str | None
+    security_metric_version: int | None
+    security_status: str | None
     repetition: int
     max_output_tokens: int
     rendered_prompt: str
@@ -292,6 +302,36 @@ class EvaluationQualitySummaryResponse(BaseModel):
     """All deterministic quality metrics for an evaluation."""
 
     metrics: list[QualityMetricSummaryResponse]
+
+
+class SecurityAggregateResponse(BaseModel):
+    """Security score with every denominator component exposed."""
+
+    score: float | None
+    total_tests: int
+    passed_tests: int
+    failed_tests: int
+    unavailable_tests: int
+
+
+class ModelSecurityAggregateResponse(SecurityAggregateResponse):
+    model_id: str
+    model_name: str
+
+
+class PromptSecurityAggregateResponse(SecurityAggregateResponse):
+    prompt_version_id: UUID
+    prompt_name: str
+    prompt_version_number: int
+
+
+class EvaluationSecuritySummaryResponse(BaseModel):
+    """Versioned security outcomes overall and by model and prompt."""
+
+    metric_version: int
+    overall: SecurityAggregateResponse
+    by_model: list[ModelSecurityAggregateResponse]
+    by_prompt_version: list[PromptSecurityAggregateResponse]
 
 
 class LatencyAggregateResponse(BaseModel):
@@ -450,6 +490,20 @@ def _result_response(result: EvaluationResult) -> EvaluationResultResponse:
         prompt_name=result.prompt_name,
         prompt_version_number=result.prompt_version_number,
         test_case_id=result.test_case_id,
+        case_type=result.case_type,
+        security_test_type=result.security_test_type,
+        security_metric_version=result.security_metric_version,
+        security_status=(
+            None
+            if result.case_type == "standard"
+            else (
+                "passed"
+                if result.security_passed is True
+                else "failed"
+                if result.security_passed is False
+                else "unavailable"
+            )
+        ),
         repetition=result.repetition,
         max_output_tokens=result.max_output_tokens,
         rendered_prompt=result.rendered_prompt,
@@ -555,6 +609,44 @@ def _quality_summary_response(
     )
 
 
+def _security_aggregate_response(
+    aggregate: SecurityAggregate,
+) -> SecurityAggregateResponse:
+    return SecurityAggregateResponse(
+        score=aggregate.score,
+        total_tests=aggregate.total_tests,
+        passed_tests=aggregate.passed_tests,
+        failed_tests=aggregate.failed_tests,
+        unavailable_tests=aggregate.unavailable_tests,
+    )
+
+
+def _security_summary_response(
+    summary: SecuritySummary,
+) -> EvaluationSecuritySummaryResponse:
+    return EvaluationSecuritySummaryResponse(
+        metric_version=summary.metric_version,
+        overall=_security_aggregate_response(summary.overall),
+        by_model=[
+            ModelSecurityAggregateResponse(
+                model_id=item.model_id,
+                model_name=item.model_name,
+                **_security_aggregate_response(item.aggregate).model_dump(),
+            )
+            for item in summary.by_model
+        ],
+        by_prompt_version=[
+            PromptSecurityAggregateResponse(
+                prompt_version_id=item.prompt_version_id,
+                prompt_name=item.prompt_name,
+                prompt_version_number=item.prompt_version_number,
+                **_security_aggregate_response(item.aggregate).model_dump(),
+            )
+            for item in summary.by_prompt_version
+        ],
+    )
+
+
 def _latency_response(aggregate: LatencyAggregate) -> LatencyAggregateResponse:
     return LatencyAggregateResponse(
         average_ms=aggregate.average_ms,
@@ -640,6 +732,7 @@ def _raise_evaluation_error(exc: Exception) -> NoReturn:
             PerformanceEvaluationNotFoundError,
             QualityEvaluationNotFoundError,
             CostEvaluationNotFoundError,
+            SecurityEvaluationNotFoundError,
         ),
     ):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -743,6 +836,22 @@ async def read_evaluation_quality_summary(
     except QualityEvaluationNotFoundError as exc:
         _raise_evaluation_error(exc)
     return _quality_summary_response(metrics)
+
+
+@router.get(
+    "/{evaluation_id}/security-summary",
+    response_model=EvaluationSecuritySummaryResponse,
+)
+async def read_evaluation_security_summary(
+    evaluation_id: UUID,
+    session: DatabaseSession,
+) -> EvaluationSecuritySummaryResponse:
+    """Return conservative security scores and explicit unavailable counts."""
+    try:
+        summary = await get_security_summary(session, evaluation_id)
+    except SecurityEvaluationNotFoundError as exc:
+        _raise_evaluation_error(exc)
+    return _security_summary_response(summary)
 
 
 @router.get(

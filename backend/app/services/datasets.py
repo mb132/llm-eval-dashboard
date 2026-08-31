@@ -16,6 +16,7 @@ from sqlalchemy.sql.functions import count as sql_count
 
 from ..models import Dataset, TestCase
 from ..models.base import utc_now
+from .security import SECURITY_TEST_TYPES
 
 type MetadataValue = str | int | float | bool | None
 
@@ -29,6 +30,7 @@ MAX_METADATA_ENTRIES = 20
 MAX_METADATA_KEY_LENGTH = 100
 MAX_METADATA_STRING_LENGTH = 1_000
 MAX_METADATA_JSON_LENGTH = 10_000
+CASE_TYPES = ("standard", "security")
 
 
 class DatasetNotFoundError(LookupError):
@@ -156,11 +158,35 @@ def validate_test_case_fields(values: Mapping[str, Any]) -> dict[str, Any]:
             label="Expected answer",
             maximum=MAX_EXPECTED_ANSWER_LENGTH,
         )
+    if "case_type" in values:
+        case_type = values["case_type"]
+        if case_type not in CASE_TYPES:
+            raise DatasetValidationError("Test case type is invalid.")
+        normalized["case_type"] = case_type
+    if "security_test_type" in values:
+        security_type = values["security_test_type"]
+        if security_type is not None and security_type not in SECURITY_TEST_TYPES:
+            raise DatasetValidationError("Security test type is invalid.")
+        normalized["security_test_type"] = security_type
     if "category" in values:
         normalized["category"] = normalize_category(values["category"])
     if "metadata" in values:
         normalized["metadata_json"] = validate_metadata(values["metadata"])
     return normalized
+
+
+def validate_security_classification(
+    *, case_type: str, security_test_type: str | None
+) -> None:
+    """Require a security subtype exactly when a case is security-sensitive."""
+    if case_type == "security" and security_test_type is None:
+        raise DatasetValidationError(
+            "Security test type is required for security test cases."
+        )
+    if case_type == "standard" and security_test_type is not None:
+        raise DatasetValidationError(
+            "Standard test cases cannot have a security test type."
+        )
 
 
 async def create_dataset(
@@ -173,6 +199,10 @@ async def create_dataset(
     """Create a dataset and its required first test case atomically."""
     display_name, name_key = normalize_dataset_name(name)
     normalized_case = validate_test_case_fields(test_case)
+    validate_security_classification(
+        case_type=normalized_case.get("case_type", "standard"),
+        security_test_type=normalized_case.get("security_test_type"),
+    )
     dataset = Dataset(
         name=display_name,
         name_key=name_key,
@@ -242,6 +272,10 @@ async def create_test_case(
 ) -> TestCase:
     """Append a validated test case while enforcing the dataset size bound."""
     normalized = validate_test_case_fields(values)
+    validate_security_classification(
+        case_type=normalized.get("case_type", "standard"),
+        security_test_type=normalized.get("security_test_type"),
+    )
     async with session.begin():
         dataset = await session.get(Dataset, dataset_id)
         if dataset is None:
@@ -279,6 +313,17 @@ async def update_test_case(
         test_case = (await session.scalars(statement)).one_or_none()
         if test_case is None:
             raise TestCaseNotFoundError("Test case not found.")
+        if (
+            normalized.get("case_type") == "standard"
+            and "security_test_type" not in normalized
+        ):
+            normalized["security_test_type"] = None
+        validate_security_classification(
+            case_type=normalized.get("case_type", test_case.case_type),
+            security_test_type=normalized.get(
+                "security_test_type", test_case.security_test_type
+            ),
+        )
         for field, value in normalized.items():
             setattr(test_case, field, value)
         test_case.updated_at = utc_now()

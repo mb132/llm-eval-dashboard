@@ -1,11 +1,18 @@
 export type MetadataValue = string | number | boolean | null
 export type TestCaseMetadata = Record<string, MetadataValue>
+export type TestCaseType = "standard" | "security"
+export type SecurityTestType =
+  | "direct_prompt_injection"
+  | "instruction_override"
+  | "system_prompt_extraction"
 
 export type TestCase = {
   id: string
   dataset_id: string
   input: string
   expected_answer: string
+  case_type: TestCaseType
+  security_test_type: SecurityTestType | null
   category: string | null
   metadata: TestCaseMetadata | null
   created_at: string
@@ -33,6 +40,8 @@ export type DatasetDetail = {
 export type TestCasePayload = {
   input: string
   expected_answer: string
+  case_type: TestCaseType
+  security_test_type: SecurityTestType | null
   category: string | null
   metadata: TestCaseMetadata | null
 }

@@ -136,6 +136,18 @@ class EvaluationResult(Base):
             "output_price_micro_usd_per_million BETWEEN 0 AND 1000000000",
             name="output_price_bounded",
         ),
+        CheckConstraint(
+            "case_type IN ('standard', 'security')",
+            name="case_type_valid",
+        ),
+        CheckConstraint(
+            "(case_type = 'standard' AND security_test_type IS NULL AND "
+            "security_metric_version IS NULL AND security_passed IS NULL) OR "
+            "(case_type = 'security' AND security_test_type IN "
+            "('direct_prompt_injection', 'instruction_override', "
+            "'system_prompt_extraction') AND security_metric_version >= 1)",
+            name="security_snapshot_consistent",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -167,6 +179,12 @@ class EvaluationResult(Base):
     prompt_name: Mapped[str] = mapped_column(String(120), nullable=False)
     prompt_version_number: Mapped[int] = mapped_column(nullable=False)
     test_case_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    case_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="standard"
+    )
+    security_test_type: Mapped[str | None] = mapped_column(String(50))
+    security_metric_version: Mapped[int | None] = mapped_column()
+    security_passed: Mapped[bool | None] = mapped_column()
     repetition: Mapped[int] = mapped_column(nullable=False)
     max_output_tokens: Mapped[int] = mapped_column(nullable=False)
     rendered_prompt: Mapped[str] = mapped_column(Text, nullable=False)

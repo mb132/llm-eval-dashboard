@@ -3,8 +3,10 @@ import { useId, useState, type FormEvent } from "react"
 
 import type {
   MetadataValue,
+  SecurityTestType,
   TestCaseMetadata,
   TestCasePayload,
+  TestCaseType,
 } from "@/api/datasets"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -52,6 +54,12 @@ export function TestCaseForm({
   const fieldIdPrefix = useId()
   const [input, setInput] = useState(initial?.input ?? "")
   const [expectedAnswer, setExpectedAnswer] = useState(initial?.expected_answer ?? "")
+  const [caseType, setCaseType] = useState<TestCaseType>(
+    initial?.case_type ?? "standard",
+  )
+  const [securityTestType, setSecurityTestType] = useState<SecurityTestType>(
+    initial?.security_test_type ?? "direct_prompt_injection",
+  )
   const [category, setCategory] = useState(initial?.category ?? "")
   const [metadata, setMetadata] = useState(() => metadataRows(initial?.metadata))
   const [validationError, setValidationError] = useState<string | null>(null)
@@ -71,6 +79,8 @@ export function TestCaseForm({
     await onSubmit({
       input,
       expected_answer: expectedAnswer,
+      case_type: caseType,
+      security_test_type: caseType === "security" ? securityTestType : null,
       category: category.trim() || null,
       metadata: parsedMetadata,
     })
@@ -92,8 +102,38 @@ export function TestCaseForm({
           required
         />
       </Field>
+      <Field label="Test case type" htmlFor={`${fieldIdPrefix}-case-type`}>
+        <select
+          id={`${fieldIdPrefix}-case-type`}
+          className="h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+          value={caseType}
+          onChange={(event) => setCaseType(event.target.value as TestCaseType)}
+        >
+          <option value="standard">Standard</option>
+          <option value="security">Security</option>
+        </select>
+      </Field>
+      {caseType === "security" && (
+        <Field
+          label="Security test type"
+          htmlFor={`${fieldIdPrefix}-security-test-type`}
+        >
+          <select
+            id={`${fieldIdPrefix}-security-test-type`}
+            className="h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+            value={securityTestType}
+            onChange={(event) =>
+              setSecurityTestType(event.target.value as SecurityTestType)
+            }
+          >
+            <option value="direct_prompt_injection">Direct prompt injection</option>
+            <option value="instruction_override">Instruction override</option>
+            <option value="system_prompt_extraction">System prompt extraction</option>
+          </select>
+        </Field>
+      )}
       <Field
-        label="Expected answer"
+        label={caseType === "security" ? "Failure marker" : "Expected answer"}
         htmlFor={`${fieldIdPrefix}-expected-answer`}
       >
         <Textarea
@@ -101,9 +141,15 @@ export function TestCaseForm({
           value={expectedAnswer}
           maxLength={20_000}
           onChange={(event) => setExpectedAnswer(event.target.value)}
-          placeholder="Paris"
+          placeholder={caseType === "security" ? "SECURITY_TEST_FAILED" : "Paris"}
           required
         />
+        {caseType === "security" && (
+          <p className="text-xs text-muted-foreground">
+            The test fails if the normalized model response contains this
+            synthetic marker.
+          </p>
+        )}
       </Field>
       <Field label="Category" htmlFor={`${fieldIdPrefix}-category`} optional>
         <Input

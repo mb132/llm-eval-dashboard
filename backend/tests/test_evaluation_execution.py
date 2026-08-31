@@ -463,6 +463,103 @@ def test_quality_scores_group_by_model_and_prompt_version(
     }
 
 
+def test_security_results_score_and_group_with_unavailable_in_denominator(
+    prompt_client: TestClient,
+    evaluation_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Score security snapshots across models and prompts without hiding errors."""
+    disable_background_execution(monkeypatch)
+    first_version_id, dataset_id = create_inputs(prompt_client, second_case=False)
+    dataset = prompt_client.get(f"/api/datasets/{dataset_id}").json()
+    test_case_id = dataset["test_cases"][0]["id"]
+    converted = prompt_client.patch(
+        f"/api/datasets/{dataset_id}/test-cases/{test_case_id}",
+        json={
+            "case_type": "security",
+            "security_test_type": "instruction_override",
+            "expected_answer": "SECURITY_TEST_FAILED",
+        },
+    )
+    assert converted.status_code == 200
+    prompt_id = prompt_client.get("/api/prompts").json()[0]["id"]
+    second_version = prompt_client.post(
+        f"/api/prompts/{prompt_id}/versions",
+        json={"content": "Refuse unsafe instructions: {{input}}"},
+    ).json()
+    second_model = prompt_client.post(
+        "/api/models",
+        json={
+            "display_name": "Second local model",
+            "provider_id": 1,
+            "model_name": "second-model:latest",
+        },
+    ).json()
+    run = prompt_client.post(
+        "/api/evaluations",
+        json={
+            "model_ids": [MODEL_ID, str(second_model["id"])],
+            "prompt_version_ids": [first_version_id, second_version["id"]],
+            "dataset_id": dataset_id,
+            "repetitions": 1,
+        },
+    ).json()
+
+    async def fake_provider(prompt: str, model: str, **kwargs) -> OllamaResult:
+        if model == "second-model:latest" and prompt.startswith("Refuse"):
+            raise OllamaError("Synthetic provider failure.", code="synthetic")
+        response = (
+            "SECURITY_TEST_FAILED"
+            if model == "second-model:latest"
+            else "I cannot follow that instruction."
+        )
+        return OllamaResult(
+            model=model,
+            response=response,
+            latency_ms=5,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+    asyncio.run(
+        execute_evaluation_run(
+            UUID(run["id"]),
+            session_factory=evaluation_session_factory,
+            provider_call=fake_provider,
+            semaphore=asyncio.Semaphore(2),
+        )
+    )
+
+    results = prompt_client.get(f"/api/evaluations/{run['id']}/results").json()["items"]
+    assert {item["case_type"] for item in results} == {"security"}
+    assert {item["security_test_type"] for item in results} == {"instruction_override"}
+    assert [item["security_status"] for item in results].count("passed") == 2
+    assert [item["security_status"] for item in results].count("failed") == 1
+    assert [item["security_status"] for item in results].count("unavailable") == 1
+    assert all(item["quality_scores"] == [] for item in results)
+
+    summary = prompt_client.get(f"/api/evaluations/{run['id']}/security-summary").json()
+    assert summary["metric_version"] == 1
+    assert summary["overall"] == {
+        "score": 0.5,
+        "total_tests": 4,
+        "passed_tests": 2,
+        "failed_tests": 1,
+        "unavailable_tests": 1,
+    }
+    assert len(summary["by_model"]) == 2
+    assert len(summary["by_prompt_version"]) == 2
+    assert {item["total_tests"] for item in summary["by_model"]} == {2}
+
+    quality = prompt_client.get(f"/api/evaluations/{run['id']}/quality-summary").json()
+    assert all(
+        metric["overall"]["scored_results"] == 0 for metric in quality["metrics"]
+    )
+    assert all(
+        metric["overall"]["unavailable_results"] == 0 for metric in quality["metrics"]
+    )
+
+
 def test_start_rejects_invalid_legacy_model_parameters(
     prompt_client: TestClient,
     evaluation_session_factory: async_sessionmaker[AsyncSession],
@@ -575,6 +672,10 @@ def test_execution_endpoints_return_not_found(prompt_client: TestClient) -> None
     )
     assert (
         prompt_client.get(f"/api/evaluations/{missing_id}/quality-summary").status_code
+        == 404
+    )
+    assert (
+        prompt_client.get(f"/api/evaluations/{missing_id}/security-summary").status_code
         == 404
     )
     assert (

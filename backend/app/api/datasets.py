@@ -1,7 +1,7 @@
 """REST API for dataset and test-case management."""
 
 from datetime import datetime
-from typing import Annotated, NoReturn, Self
+from typing import Annotated, Literal, NoReturn, Self, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -34,6 +34,12 @@ from ..services.datasets import (
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_session)]
+CaseType = Literal["standard", "security"]
+SecurityTestType = Literal[
+    "direct_prompt_injection",
+    "instruction_override",
+    "system_prompt_extraction",
+]
 
 
 class StrictRequest(BaseModel):
@@ -59,6 +65,8 @@ class TestCaseCreate(StrictRequest):
 
     input: str = Field(min_length=1, max_length=MAX_INPUT_LENGTH)
     expected_answer: str = Field(min_length=1, max_length=MAX_EXPECTED_ANSWER_LENGTH)
+    case_type: CaseType = "standard"
+    security_test_type: SecurityTestType | None = None
     category: str | None = Field(default=None, max_length=MAX_CATEGORY_LENGTH)
     metadata: Metadata | None = None
 
@@ -70,6 +78,8 @@ class TestCaseUpdate(StrictRequest):
     expected_answer: str | None = Field(
         default=None, min_length=1, max_length=MAX_EXPECTED_ANSWER_LENGTH
     )
+    case_type: CaseType | None = None
+    security_test_type: SecurityTestType | None = None
     category: str | None = Field(default=None, max_length=MAX_CATEGORY_LENGTH)
     metadata: Metadata | None = None
 
@@ -78,7 +88,7 @@ class TestCaseUpdate(StrictRequest):
         """Require at least one field and preserve required-field nullability."""
         if not self.model_fields_set:
             raise ValueError("At least one test case field must be provided.")
-        for field in ("input", "expected_answer"):
+        for field in ("input", "expected_answer", "case_type"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field.replace('_', ' ').title()} must not be null.")
         return self
@@ -115,6 +125,8 @@ class TestCaseResponse(BaseModel):
     dataset_id: UUID
     input: str
     expected_answer: str
+    case_type: CaseType
+    security_test_type: SecurityTestType | None
     category: str | None
     metadata: dict[str, MetadataValue] | None
     created_at: datetime
@@ -149,6 +161,8 @@ def _test_case_response(test_case: TestCase) -> TestCaseResponse:
         dataset_id=test_case.dataset_id,
         input=test_case.input,
         expected_answer=test_case.expected_answer,
+        case_type=cast(CaseType, test_case.case_type),
+        security_test_type=cast(SecurityTestType | None, test_case.security_test_type),
         category=test_case.category,
         metadata=test_case.metadata_json,
         created_at=test_case.created_at,

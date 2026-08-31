@@ -45,6 +45,7 @@ from .playground import (
 from .pricing import calculate_cost_nano_usd
 from .prompts import INPUT_PLACEHOLDER
 from .quality import QUALITY_METRICS, score_response
+from .security import SECURITY_METRIC_VERSION, score_security_response
 
 MAX_CONCURRENT_MODEL_REQUESTS = 4
 MAX_ERROR_MESSAGE_LENGTH = 500
@@ -267,19 +268,27 @@ async def create_evaluation_run(
                         prompt_name=prompt_name,
                         prompt_version_number=version.version_number,
                         test_case_id=test_case.id,
+                        case_type=test_case.case_type,
+                        security_test_type=test_case.security_test_type,
+                        security_metric_version=(
+                            SECURITY_METRIC_VERSION
+                            if test_case.case_type == "security"
+                            else None
+                        ),
                         repetition=repetition,
                         max_output_tokens=max_output_tokens_by_id[model_id],
                         rendered_prompt=rendered_prompt,
                         test_input=test_case.input,
                         expected_output=test_case.expected_answer,
                     )
-                    evaluation_result.quality_scores.extend(
-                        EvaluationQualityScore(
-                            method=metric.method,
-                            metric_version=metric.version,
+                    if test_case.case_type == "standard":
+                        evaluation_result.quality_scores.extend(
+                            EvaluationQualityScore(
+                                method=metric.method,
+                                metric_version=metric.version,
+                            )
+                            for metric in QUALITY_METRICS
                         )
-                        for metric in QUALITY_METRICS
-                    )
                     evaluation.results.append(evaluation_result)
                     sequence_number += 1
 
@@ -579,24 +588,34 @@ async def _store_result_success(
         result = await session.get(EvaluationResult, result_id)
         if result is None or result.status != "running":
             return
-        scores = list(
-            await session.scalars(
-                select(EvaluationQualityScore).where(
-                    EvaluationQualityScore.result_id == result_id
+        if result.case_type == "security":
+            if result.security_metric_version != SECURITY_METRIC_VERSION:
+                raise RuntimeError("Evaluation security metric snapshot is invalid.")
+            result.security_passed = score_security_response(
+                failure_marker=result.expected_output,
+                generated=outcome.response,
+            )
+        else:
+            scores = list(
+                await session.scalars(
+                    select(EvaluationQualityScore).where(
+                        EvaluationQualityScore.result_id == result_id
+                    )
                 )
             )
-        )
-        calculated_scores = score_response(
-            expected=result.expected_output,
-            generated=outcome.response,
-        )
-        stored_metrics = {
-            (score.method, score.metric_version): score for score in scores
-        }
-        if set(stored_metrics) != set(calculated_scores):
-            raise RuntimeError("Evaluation quality metric snapshots are incomplete.")
-        for metric, score_value in calculated_scores.items():
-            stored_metrics[metric].score = score_value
+            calculated_scores = score_response(
+                expected=result.expected_output,
+                generated=outcome.response,
+            )
+            stored_metrics = {
+                (score.method, score.metric_version): score for score in scores
+            }
+            if set(stored_metrics) != set(calculated_scores):
+                raise RuntimeError(
+                    "Evaluation quality metric snapshots are incomplete."
+                )
+            for metric, score_value in calculated_scores.items():
+                stored_metrics[metric].score = score_value
         result.status = "succeeded"
         result.reported_model_name = outcome.model
         result.generated_output = outcome.response
