@@ -126,6 +126,12 @@ export type ModelLatencyAggregate = LatencyAggregate & {
   model_name: string
 }
 
+export type PromptLatencyAggregate = LatencyAggregate & {
+  prompt_version_id: string
+  prompt_name: string
+  prompt_version_number: number
+}
+
 export type TokenAggregate = {
   sum_tokens: number | null
   recorded_results: number
@@ -140,13 +146,24 @@ export type ModelTokenAggregate = {
   total_tokens: TokenAggregate
 }
 
+export type PromptTokenAggregate = {
+  prompt_version_id: string
+  prompt_name: string
+  prompt_version_number: number
+  input_tokens: TokenAggregate
+  output_tokens: TokenAggregate
+  total_tokens: TokenAggregate
+}
+
 export type EvaluationPerformanceSummary = {
   latency: LatencyAggregate
   latency_by_model: ModelLatencyAggregate[]
+  latency_by_prompt_version: PromptLatencyAggregate[]
   input_tokens: TokenAggregate
   output_tokens: TokenAggregate
   total_tokens: TokenAggregate
   token_usage_by_model: ModelTokenAggregate[]
+  token_usage_by_prompt_version: PromptTokenAggregate[]
 }
 
 export type CostAggregate = {
@@ -160,12 +177,19 @@ export type ModelCostAggregate = CostAggregate & {
   model_name: string
 }
 
+export type PromptCostAggregate = CostAggregate & {
+  prompt_version_id: string
+  prompt_name: string
+  prompt_version_number: number
+}
+
 export type EvaluationCostSummary = {
   overall: CostAggregate
   average_complete_test_case_usd: string | null
   complete_test_cases: number
   incomplete_test_cases: number
   by_model: ModelCostAggregate[]
+  by_prompt_version: PromptCostAggregate[]
 }
 
 export type PricingSnapshot = {

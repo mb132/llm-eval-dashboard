@@ -30,12 +30,21 @@ class ModelCostAggregate:
 
 
 @dataclass(frozen=True, slots=True)
+class PromptCostAggregate:
+    prompt_version_id: UUID
+    prompt_name: str
+    prompt_version_number: int
+    aggregate: CostAggregate
+
+
+@dataclass(frozen=True, slots=True)
 class CostSummary:
     overall: CostAggregate
     average_complete_test_case_nano_usd: int | None
     complete_test_cases: int
     incomplete_test_cases: int
     by_model: list[ModelCostAggregate]
+    by_prompt_version: list[PromptCostAggregate]
 
 
 def _aggregate(costs: list[int | None]) -> CostAggregate:
@@ -56,6 +65,9 @@ async def get_cost_summary(session: AsyncSession, evaluation_id: UUID) -> CostSu
             select(
                 EvaluationResult.model_id,
                 EvaluationResult.model_name,
+                EvaluationResult.prompt_version_id,
+                EvaluationResult.prompt_name,
+                EvaluationResult.prompt_version_number,
                 EvaluationResult.test_case_id,
                 EvaluationResult.estimated_cost_nano_usd,
             )
@@ -64,11 +76,21 @@ async def get_cost_summary(session: AsyncSession, evaluation_id: UUID) -> CostSu
         )
     )
     by_model: dict[tuple[str, str], list[int | None]] = defaultdict(list)
+    by_prompt: dict[tuple[UUID, str, int], list[int | None]] = defaultdict(list)
     by_test_case: dict[UUID, list[int | None]] = defaultdict(list)
     all_costs: list[int | None] = []
-    for model_id, model_name, test_case_id, cost in rows:
+    for (
+        model_id,
+        model_name,
+        prompt_version_id,
+        prompt_name,
+        prompt_version_number,
+        test_case_id,
+        cost,
+    ) in rows:
         all_costs.append(cost)
         by_model[(model_id, model_name)].append(cost)
+        by_prompt[(prompt_version_id, prompt_name, prompt_version_number)].append(cost)
         by_test_case[test_case_id].append(cost)
 
     complete_case_costs = [
@@ -96,6 +118,17 @@ async def get_cost_summary(session: AsyncSession, evaluation_id: UUID) -> CostSu
             )
             for (model_id, model_name), costs in sorted(
                 by_model.items(), key=lambda item: (item[0][1], item[0][0])
+            )
+        ],
+        by_prompt_version=[
+            PromptCostAggregate(
+                prompt_version_id=version_id,
+                prompt_name=prompt_name,
+                prompt_version_number=version_number,
+                aggregate=_aggregate(costs),
+            )
+            for (version_id, prompt_name, version_number), costs in sorted(
+                by_prompt.items(), key=lambda item: (item[0][1], item[0][2], item[0][0])
             )
         ],
     )

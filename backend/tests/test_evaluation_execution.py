@@ -414,6 +414,16 @@ def test_execution_uses_the_persisted_model_configuration(
                 "unavailable_results": 0,
             }
         ],
+        "by_prompt_version": [
+            {
+                "prompt_version_id": version_id,
+                "prompt_name": "Execution prompt",
+                "prompt_version_number": 1,
+                "estimated_usd": "0.000022000",
+                "priced_results": 1,
+                "unavailable_results": 0,
+            }
+        ],
     }
 
 
@@ -449,6 +459,10 @@ def test_quality_scores_group_by_model_and_prompt_version(
     ).json()
 
     async def fake_provider(prompt: str, model: str, **kwargs) -> OllamaResult:
+        if model == "second-model:latest" and prompt.startswith(
+            "Reply with only this answer:"
+        ):
+            raise OllamaError("Synthetic prompt/model failure.", code="synthetic")
         return OllamaResult(
             model=model,
             response="Paris",
@@ -470,8 +484,8 @@ def test_quality_scores_group_by_model_and_prompt_version(
     exact = summary["metrics"][0]
     assert len(exact["by_model"]) == 2
     assert len(exact["by_prompt_version"]) == 2
-    assert {item["scored_results"] for item in exact["by_model"]} == {2}
-    assert {item["scored_results"] for item in exact["by_prompt_version"]} == {2}
+    assert {item["scored_results"] for item in exact["by_model"]} == {1, 2}
+    assert {item["scored_results"] for item in exact["by_prompt_version"]} == {1, 2}
 
     performance = prompt_client.get(
         f"/api/evaluations/{run['id']}/performance-summary"
@@ -480,21 +494,37 @@ def test_quality_scores_group_by_model_and_prompt_version(
         "average_ms": 5.0,
         "minimum_ms": 5,
         "maximum_ms": 5,
-        "recorded_results": 4,
-        "unavailable_results": 0,
+        "recorded_results": 3,
+        "unavailable_results": 1,
     }
     assert len(performance["latency_by_model"]) == 2
-    assert {item["recorded_results"] for item in performance["latency_by_model"]} == {2}
+    assert {item["recorded_results"] for item in performance["latency_by_model"]} == {
+        1,
+        2,
+    }
     assert performance["total_tokens"] == {
-        "sum_tokens": 8,
-        "recorded_results": 4,
-        "unavailable_results": 0,
+        "sum_tokens": 6,
+        "recorded_results": 3,
+        "unavailable_results": 1,
     }
     assert len(performance["token_usage_by_model"]) == 2
     assert {
         item["total_tokens"]["sum_tokens"]
         for item in performance["token_usage_by_model"]
-    } == {4}
+    } == {2, 4}
+    assert len(performance["latency_by_prompt_version"]) == 2
+    assert {
+        item["recorded_results"] for item in performance["latency_by_prompt_version"]
+    } == {1, 2}
+    assert len(performance["token_usage_by_prompt_version"]) == 2
+    assert {
+        item["total_tokens"]["sum_tokens"]
+        for item in performance["token_usage_by_prompt_version"]
+    } == {2, 4}
+
+    costs = prompt_client.get(f"/api/evaluations/{run['id']}/cost-summary").json()
+    assert len(costs["by_prompt_version"]) == 2
+    assert {item["unavailable_results"] for item in costs["by_prompt_version"]} == {2}
 
 
 def test_security_results_score_and_group_with_unavailable_in_denominator(

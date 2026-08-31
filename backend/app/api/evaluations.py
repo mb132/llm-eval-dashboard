@@ -15,6 +15,7 @@ from ..services.costs import (
     CostEvaluationNotFoundError,
     CostSummary,
     ModelCostAggregate,
+    PromptCostAggregate,
     get_cost_summary,
 )
 from ..services.evaluation_configuration import (
@@ -51,6 +52,8 @@ from ..services.performance import (
     ModelTokenAggregate,
     PerformanceEvaluationNotFoundError,
     PerformanceSummary,
+    PromptLatencyAggregate,
+    PromptTokenAggregate,
     TokenAggregate,
     get_performance_summary,
 )
@@ -371,6 +374,12 @@ class ModelLatencyAggregateResponse(LatencyAggregateResponse):
     model_name: str
 
 
+class PromptLatencyAggregateResponse(LatencyAggregateResponse):
+    prompt_version_id: UUID
+    prompt_name: str
+    prompt_version_number: int
+
+
 class TokenAggregateResponse(BaseModel):
     """One token sum with explicit sample counts."""
 
@@ -389,15 +398,26 @@ class ModelTokenAggregateResponse(BaseModel):
     total_tokens: TokenAggregateResponse
 
 
+class PromptTokenAggregateResponse(BaseModel):
+    prompt_version_id: UUID
+    prompt_name: str
+    prompt_version_number: int
+    input_tokens: TokenAggregateResponse
+    output_tokens: TokenAggregateResponse
+    total_tokens: TokenAggregateResponse
+
+
 class PerformanceSummaryResponse(BaseModel):
     """Persisted latency and token usage for an evaluation."""
 
     latency: LatencyAggregateResponse
     latency_by_model: list[ModelLatencyAggregateResponse]
+    latency_by_prompt_version: list[PromptLatencyAggregateResponse]
     input_tokens: TokenAggregateResponse
     output_tokens: TokenAggregateResponse
     total_tokens: TokenAggregateResponse
     token_usage_by_model: list[ModelTokenAggregateResponse]
+    token_usage_by_prompt_version: list[PromptTokenAggregateResponse]
 
 
 class CostAggregateResponse(BaseModel):
@@ -413,6 +433,12 @@ class ModelCostAggregateResponse(CostAggregateResponse):
     model_name: str
 
 
+class PromptCostAggregateResponse(CostAggregateResponse):
+    prompt_version_id: UUID
+    prompt_name: str
+    prompt_version_number: int
+
+
 class EvaluationCostSummaryResponse(BaseModel):
     """Estimated evaluation costs in USD from immutable price snapshots."""
 
@@ -421,6 +447,7 @@ class EvaluationCostSummaryResponse(BaseModel):
     complete_test_cases: int
     incomplete_test_cases: int
     by_model: list[ModelCostAggregateResponse]
+    by_prompt_version: list[PromptCostAggregateResponse]
 
 
 def _options_response(options: EvaluationOptions) -> EvaluationOptionsResponse:
@@ -718,6 +745,17 @@ def _model_latency_response(
     )
 
 
+def _prompt_latency_response(
+    item: PromptLatencyAggregate,
+) -> PromptLatencyAggregateResponse:
+    return PromptLatencyAggregateResponse(
+        prompt_version_id=item.prompt_version_id,
+        prompt_name=item.prompt_name,
+        prompt_version_number=item.prompt_version_number,
+        **_latency_response(item.aggregate).model_dump(),
+    )
+
+
 def _token_response(aggregate: TokenAggregate) -> TokenAggregateResponse:
     return TokenAggregateResponse(
         sum_tokens=aggregate.sum_tokens,
@@ -736,6 +774,17 @@ def _model_token_response(item: ModelTokenAggregate) -> ModelTokenAggregateRespo
     )
 
 
+def _prompt_token_response(item: PromptTokenAggregate) -> PromptTokenAggregateResponse:
+    return PromptTokenAggregateResponse(
+        prompt_version_id=item.prompt_version_id,
+        prompt_name=item.prompt_name,
+        prompt_version_number=item.prompt_version_number,
+        input_tokens=_token_response(item.input_tokens),
+        output_tokens=_token_response(item.output_tokens),
+        total_tokens=_token_response(item.total_tokens),
+    )
+
+
 def _performance_summary_response(
     summary: PerformanceSummary,
 ) -> PerformanceSummaryResponse:
@@ -744,11 +793,18 @@ def _performance_summary_response(
         latency_by_model=[
             _model_latency_response(item) for item in summary.latency_by_model
         ],
+        latency_by_prompt_version=[
+            _prompt_latency_response(item) for item in summary.latency_by_prompt_version
+        ],
         input_tokens=_token_response(summary.input_tokens),
         output_tokens=_token_response(summary.output_tokens),
         total_tokens=_token_response(summary.total_tokens),
         token_usage_by_model=[
             _model_token_response(item) for item in summary.token_usage_by_model
+        ],
+        token_usage_by_prompt_version=[
+            _prompt_token_response(item)
+            for item in summary.token_usage_by_prompt_version
         ],
     )
 
@@ -773,6 +829,15 @@ def _model_cost_response(item: ModelCostAggregate) -> ModelCostAggregateResponse
     )
 
 
+def _prompt_cost_response(item: PromptCostAggregate) -> PromptCostAggregateResponse:
+    return PromptCostAggregateResponse(
+        prompt_version_id=item.prompt_version_id,
+        prompt_name=item.prompt_name,
+        prompt_version_number=item.prompt_version_number,
+        **_cost_aggregate_response(item.aggregate).model_dump(),
+    )
+
+
 def _cost_summary_response(summary: CostSummary) -> EvaluationCostSummaryResponse:
     return EvaluationCostSummaryResponse(
         overall=_cost_aggregate_response(summary.overall),
@@ -784,6 +849,9 @@ def _cost_summary_response(summary: CostSummary) -> EvaluationCostSummaryRespons
         complete_test_cases=summary.complete_test_cases,
         incomplete_test_cases=summary.incomplete_test_cases,
         by_model=[_model_cost_response(item) for item in summary.by_model],
+        by_prompt_version=[
+            _prompt_cost_response(item) for item in summary.by_prompt_version
+        ],
     )
 
 

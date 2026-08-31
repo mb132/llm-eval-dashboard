@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   Trophy,
 } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 
 import {
@@ -28,7 +28,11 @@ import {
   type EvaluationRun,
   type EvaluationRunPage,
   type EvaluationSecuritySummary,
-  type ModelQualityAggregate,
+  type CostAggregate,
+  type LatencyAggregate,
+  type QualityAggregate,
+  type SecurityAggregate,
+  type TokenAggregate,
 } from "@/api/evaluations"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -43,7 +47,8 @@ import {
 } from "@/components/ui/table"
 
 const RUN_PAGE_SIZE = 20
-type DashboardView = "overview" | "comparison"
+const DASHBOARD_VIEWS = ["overview", "models", "prompts"] as const
+type DashboardView = (typeof DASHBOARD_VIEWS)[number]
 
 type Summaries = {
   quality: EvaluationQualitySummary
@@ -167,19 +172,19 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <section className="relative overflow-hidden rounded-2xl bg-slate-950 px-6 py-8 text-white shadow-sm sm:px-8">
-        <div className="absolute -right-20 -top-24 size-72 rounded-full bg-cyan-400/10 blur-3xl" />
-        <div className="absolute -bottom-28 left-1/3 size-64 rounded-full bg-indigo-400/15 blur-3xl" />
+      <section className="relative overflow-hidden rounded-2xl border bg-card px-6 py-8 text-card-foreground shadow-sm sm:px-8">
+        <div className="absolute -right-20 -top-24 size-72 rounded-full bg-cyan-200/40 blur-3xl" />
+        <div className="absolute -bottom-28 left-1/3 size-64 rounded-full bg-indigo-200/40 blur-3xl" />
         <div className="relative grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
-            <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
+            <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-700">
               <Gauge className="size-4" /> Evaluation cockpit
             </p>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
               {selectedRun?.dataset_name ?? "Run dashboard"}
             </h1>
             {selectedRun && (
-              <p className="mt-3 text-sm text-slate-300">
+              <p className="mt-3 text-sm text-muted-foreground">
                 {formatDate(selectedRun.completed_at ?? selectedRun.created_at)} ·{" "}
                 {selectedRun.completed_requests.toLocaleString()} of{" "}
                 {selectedRun.total_requests.toLocaleString()} requests completed
@@ -191,14 +196,14 @@ export function DashboardPage() {
             {selectedRun && (
               <Link
                 to={`/evaluations/${selectedRun.id}`}
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-white/20 bg-white/10 px-3 text-sm font-medium hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-sm font-medium text-background hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
               >
                 Full run details <ArrowRight className="size-4" />
               </Link>
             )}
             <Link
               to="/evaluations/history"
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-white/20 px-3 text-sm font-medium text-slate-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+              className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
             >
               <History className="size-4" /> History
             </Link>
@@ -237,12 +242,36 @@ export function DashboardPage() {
             </button>
           )}
         </div>
-        <div className="inline-flex w-fit rounded-lg bg-muted p-1" aria-label="Dashboard view">
-          {(["overview", "comparison"] as const).map((item) => (
+        <div
+          className="inline-flex w-fit rounded-lg bg-muted p-1"
+          role="tablist"
+          aria-label="Dashboard view"
+          aria-orientation="horizontal"
+          onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return
+            event.preventDefault()
+            const index = DASHBOARD_VIEWS.indexOf(view)
+            const next = event.key === "Home"
+              ? DASHBOARD_VIEWS[0]
+              : event.key === "End"
+                ? DASHBOARD_VIEWS[DASHBOARD_VIEWS.length - 1]
+                : DASHBOARD_VIEWS[
+                    (index + (event.key === "ArrowRight" ? 1 : -1) +
+                      DASHBOARD_VIEWS.length) % DASHBOARD_VIEWS.length
+                  ]
+            setView(next)
+            document.getElementById(`dashboard-tab-${next}`)?.focus()
+          }}
+        >
+          {DASHBOARD_VIEWS.map((item) => (
             <button
               key={item}
+              id={`dashboard-tab-${item}`}
               type="button"
-              aria-pressed={view === item}
+              role="tab"
+              aria-selected={view === item}
+              aria-controls={`dashboard-panel-${item}`}
+              tabIndex={view === item ? 0 : -1}
               onClick={() => setView(item)}
               className={`rounded-md px-4 py-2 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 ${
                 view === item
@@ -250,7 +279,11 @@ export function DashboardPage() {
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {item === "comparison" ? "Model comparison" : "Overview"}
+              {item === "models"
+                ? "Model comparison"
+                : item === "prompts"
+                  ? "Prompt comparison"
+                  : "Overview"}
             </button>
           ))}
         </div>
@@ -267,11 +300,26 @@ export function DashboardPage() {
       )}
       {selectedRun && !isTerminal(selectedRun) && <ActiveRun run={selectedRun} />}
       {selectedRun && summaries && view === "overview" && (
-        <Overview run={selectedRun} summaries={summaries} />
+        <DashboardPanel view="overview">
+          <Overview run={selectedRun} summaries={summaries} />
+        </DashboardPanel>
       )}
-      {summaries && view === "comparison" && <ModelComparison summaries={summaries} />}
+      {summaries && view === "models" && (
+        <DashboardPanel view="models">
+          <ModelComparison summaries={summaries} />
+        </DashboardPanel>
+      )}
+      {summaries && view === "prompts" && (
+        <DashboardPanel view="prompts">
+          <PromptComparison summaries={summaries} />
+        </DashboardPanel>
+      )}
     </div>
   )
+}
+
+function DashboardPanel({ view, children }: { view: DashboardView; children: ReactNode }) {
+  return <div id={`dashboard-panel-${view}`} role="tabpanel" aria-labelledby={`dashboard-tab-${view}`}>{children}</div>
 }
 
 function Overview({ run, summaries }: { run: EvaluationRun; summaries: Summaries }) {
@@ -335,24 +383,71 @@ function Overview({ run, summaries }: { run: EvaluationRun; summaries: Summaries
 
 function ModelComparison({ summaries }: { summaries: Summaries }) {
   const rows = useMemo(() => comparisonRows(summaries), [summaries])
+  return (
+    <ComparisonSection
+      rows={rows}
+      entity="Model"
+      title="Model comparison"
+      description="Models are compared only within the selected run. Best labels exclude partial data."
+    />
+  )
+}
+
+function PromptComparison({ summaries }: { summaries: Summaries }) {
+  const rows = useMemo(() => promptComparisonRows(summaries), [summaries])
+  if (rows.length < 2) {
+    return (
+      <section aria-labelledby="prompt-comparison-heading" className="space-y-4">
+        <div>
+          <h2 id="prompt-comparison-heading" className="text-xl font-semibold">
+            Prompt comparison
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Prompt versions are compared across the same models and dataset in this run.
+          </p>
+        </div>
+        <Card>
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            This run contains only one prompt version. Select at least two versions when
+            configuring an evaluation to compare them here.
+          </CardContent>
+        </Card>
+      </section>
+    )
+  }
+  return (
+    <ComparisonSection
+      rows={rows}
+      entity="Prompt version"
+      title="Prompt comparison"
+      description="Prompt versions are aggregated across the same models and dataset in this run. Best labels exclude partial data."
+    />
+  )
+}
+
+function ComparisonSection({ rows, entity, title, description }: {
+  rows: ComparisonRow[]
+  entity: "Model" | "Prompt version"
+  title: string
+  description: string
+}) {
   const bestQuality = bestIds(rows, (row) => completeScore(row.contains), "max")
   const bestLatency = bestIds(rows, (row) => completeLatency(row.latency), "min")
   const bestCost = bestIds(rows, (row) => completeCost(row.cost), "min")
   const bestSecurity = bestIds(rows, (row) => completeSecurity(row.security), "max")
+  const headingId = entity === "Model" ? "comparison-heading" : "prompt-comparison-heading"
 
   return (
-    <section aria-labelledby="comparison-heading" className="space-y-4">
+    <section aria-labelledby={headingId} className="space-y-4">
       <div>
-        <h2 id="comparison-heading" className="text-xl font-semibold">Model comparison</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Models are compared only within the selected run. Best labels exclude partial data.
-        </p>
+        <h2 id={headingId} className="text-xl font-semibold">{title}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
       </div>
       <Card className="gap-0 overflow-hidden py-0">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>Model</TableHead>
+              <TableHead>{entity}</TableHead>
               <TableHead>Quality</TableHead>
               <TableHead>Latency</TableHead>
               <TableHead>Total tokens</TableHead>
@@ -408,12 +503,15 @@ function ModelComparison({ summaries }: { summaries: Summaries }) {
           </TableBody>
         </Table>
       </Card>
-      {rows.length >= 2 && <ModelProfilePlot rows={rows} />}
+      <ComparisonProfilePlot rows={rows} entity={entity} />
     </section>
   )
 }
 
-function ModelProfilePlot({ rows }: { rows: ComparisonRow[] }) {
+function ComparisonProfilePlot({ rows, entity }: {
+  rows: ComparisonRow[]
+  entity: "Model" | "Prompt version"
+}) {
   const [highlighted, setHighlighted] = useState<string | null>(null)
   const axes = profileAxes(rows)
   const colors = ["#0891b2", "#4f46e5", "#c026d3", "#ea580c", "#16a34a"]
@@ -421,41 +519,35 @@ function ModelProfilePlot({ rows }: { rows: ComparisonRow[] }) {
   const y = (value: number) => 32 + (1 - value) * 150
 
   return (
-    <Card className="overflow-hidden border-slate-200 bg-slate-950 text-white">
+    <Card className="overflow-hidden bg-card text-card-foreground shadow-sm">
       <CardHeader className="gap-3 sm:flex sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <CardTitle>Model performance constellation</CardTitle>
-          <p className="mt-2 max-w-2xl text-sm text-slate-300">
+          <CardTitle>{entity} performance constellation</CardTitle>
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
             A relative profile within this run. Higher positions are better;
             latency, token use, and cost are inverted. Exact values remain in the table.
           </p>
         </div>
-        <Badge className="w-fit border-white/20 bg-white/10 text-white" variant="outline">
+        <Badge className="w-fit" variant="outline">
           Same dataset · same run
         </Badge>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03] p-3">
+        <div className="overflow-x-auto rounded-xl border bg-muted/30 p-3">
           <svg
             viewBox="0 0 630 225"
             className="min-w-[620px]"
             role="img"
-            aria-label="Relative model profile across quality, latency, token use, cost, and security"
+            aria-label={`Relative ${entity.toLowerCase()} profile across quality, latency, token use, cost, and security`}
           >
-            <defs>
-              <linearGradient id="profile-grid" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0" stopColor="#67e8f9" stopOpacity="0.25" />
-                <stop offset="1" stopColor="#818cf8" stopOpacity="0.04" />
-              </linearGradient>
-            </defs>
-            <rect x="35" y="24" width="560" height="166" rx="12" fill="url(#profile-grid)" />
+            <rect x="35" y="24" width="560" height="166" rx="12" fill="var(--card)" />
             {[0, 0.5, 1].map((tick) => (
-              <line key={tick} x1="35" x2="595" y1={y(tick)} y2={y(tick)} stroke="white" strokeOpacity="0.12" strokeDasharray="4 5" />
+              <line key={tick} x1="35" x2="595" y1={y(tick)} y2={y(tick)} stroke="var(--foreground)" strokeOpacity="0.12" strokeDasharray="4 5" />
             ))}
             {axes.map((axis, index) => (
               <g key={axis.label}>
-                <line x1={x(index)} x2={x(index)} y1="32" y2="182" stroke="white" strokeOpacity="0.16" />
-                <text x={x(index)} y="211" fill="#cbd5e1" fontSize="11" textAnchor="middle">{axis.label}</text>
+                <line x1={x(index)} x2={x(index)} y1="32" y2="182" stroke="var(--foreground)" strokeOpacity="0.16" />
+                <text x={x(index)} y="211" fill="var(--muted-foreground)" fontSize="11" textAnchor="middle">{axis.label}</text>
               </g>
             ))}
             {rows.map((row, rowIndex) => {
@@ -470,21 +562,21 @@ function ModelProfilePlot({ rows }: { rows: ComparisonRow[] }) {
                     <polyline key={index} points={segment} fill="none" stroke={colors[rowIndex % colors.length]} strokeWidth={highlighted === row.id ? 4 : 2.5} strokeLinejoin="round" />
                   ))}
                   {points.map((point, index) => point && (
-                    <circle key={axes[index].label} cx={Number(point.split(",")[0])} cy={Number(point.split(",")[1])} r={highlighted === row.id ? 5 : 3.5} fill={colors[rowIndex % colors.length]} stroke="#020617" strokeWidth="2" />
+                    <circle key={axes[index].label} cx={Number(point.split(",")[0])} cy={Number(point.split(",")[1])} r={highlighted === row.id ? 5 : 3.5} fill={colors[rowIndex % colors.length]} stroke="var(--card)" strokeWidth="2" />
                   ))}
                 </g>
               )
             })}
           </svg>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2" aria-label="Highlight model">
+        <div className="mt-4 flex flex-wrap gap-2" aria-label={`Highlight ${entity.toLowerCase()}`}>
           {rows.map((row, index) => (
             <button
               key={row.id}
               type="button"
               aria-pressed={highlighted === row.id}
               onClick={() => setHighlighted((current) => current === row.id ? null : row.id)}
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+              className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
             >
               <span className="size-2 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
               {row.name}
@@ -560,11 +652,11 @@ function ValueCell({ value, unavailable, best = false }: {
 
 function ActiveRuns({ runs }: { runs: EvaluationRun[] }) {
   return (
-    <Card className="gap-3 border-cyan-200 bg-cyan-50/50">
+    <Card className="gap-3">
       <CardHeader><CardTitle className="text-sm">Active evaluations</CardTitle></CardHeader>
       <CardContent className="flex flex-wrap gap-2">
         {runs.map((run) => (
-          <Link key={run.id} to={`/evaluations/${run.id}`} className="inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm hover:bg-cyan-50">
+          <Link key={run.id} to={`/evaluations/${run.id}`} className="inline-flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm font-medium shadow-sm hover:bg-muted">
             <LoaderCircle className="size-4 animate-spin" /> {run.dataset_name} · {run.completed_requests}/{run.total_requests}
           </Link>
         ))}
@@ -611,7 +703,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 }
 
 function RunStatus({ status }: { status: EvaluationRun["status"] }) {
-  return <Badge className="border-white/20 bg-white/10 text-white" variant="outline">{status[0].toUpperCase() + status.slice(1)}</Badge>
+  return <Badge variant="outline">{status[0].toUpperCase() + status.slice(1)}</Badge>
 }
 
 function RunFact({ label, value }: { label: string; value: string }) {
@@ -659,7 +751,18 @@ function metric(summary: EvaluationQualitySummary, method: string) {
   return summary.metrics.find((item) => item.method === method)
 }
 
-function comparisonRows(summaries: Summaries) {
+type ComparisonRow = {
+  id: string
+  name: string
+  contains: QualityAggregate | undefined
+  exact: QualityAggregate | undefined
+  latency: LatencyAggregate | undefined
+  tokens: { total_tokens: TokenAggregate } | undefined
+  cost: CostAggregate | undefined
+  security: SecurityAggregate | undefined
+}
+
+function comparisonRows(summaries: Summaries): ComparisonRow[] {
   const contains = metric(summaries.quality, "normalized_contains_match")
   const exact = metric(summaries.quality, "normalized_exact_match")
   const models = new Map<string, string>()
@@ -684,7 +787,50 @@ function comparisonRows(summaries: Summaries) {
   })).sort((a, b) => a.name.localeCompare(b.name))
 }
 
-type ComparisonRow = ReturnType<typeof comparisonRows>[number]
+function promptComparisonRows(summaries: Summaries): ComparisonRow[] {
+  const contains = metric(summaries.quality, "normalized_contains_match")
+  const exact = metric(summaries.quality, "normalized_exact_match")
+  const prompts = new Map<
+    string,
+    { prompt_name: string; prompt_version_number: number }
+  >()
+  const named = [
+    ...(contains?.by_prompt_version ?? []),
+    ...(exact?.by_prompt_version ?? []),
+    ...summaries.performance.latency_by_prompt_version,
+    ...summaries.performance.token_usage_by_prompt_version,
+    ...summaries.cost.by_prompt_version,
+    ...summaries.security.by_prompt_version,
+  ]
+  named.forEach((item) =>
+    prompts.set(item.prompt_version_id, {
+      prompt_name: item.prompt_name,
+      prompt_version_number: item.prompt_version_number,
+    }),
+  )
+  return [...prompts]
+    .map(([id, prompt]) => ({
+      id,
+      name: `${prompt.prompt_name} · v${prompt.prompt_version_number}`,
+      contains: contains?.by_prompt_version.find(
+        (item) => item.prompt_version_id === id,
+      ),
+      exact: exact?.by_prompt_version.find((item) => item.prompt_version_id === id),
+      latency: summaries.performance.latency_by_prompt_version.find(
+        (item) => item.prompt_version_id === id,
+      ),
+      tokens: summaries.performance.token_usage_by_prompt_version.find(
+        (item) => item.prompt_version_id === id,
+      ),
+      cost: summaries.cost.by_prompt_version.find(
+        (item) => item.prompt_version_id === id,
+      ),
+      security: summaries.security.by_prompt_version.find(
+        (item) => item.prompt_version_id === id,
+      ),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
 
 function profileAxes(rows: ComparisonRow[]) {
   const latencyValues = rows.flatMap((row) => nullableValue(completeLatency(row.latency)))
@@ -750,7 +896,7 @@ function profileSegments(points: (string | null)[]) {
   return segments
 }
 
-function completeScore(value: ModelQualityAggregate | undefined) {
+function completeScore(value: QualityAggregate | undefined) {
   return value?.average_score !== null && value?.average_score !== undefined && value.unavailable_results === 0 ? value.average_score : null
 }
 

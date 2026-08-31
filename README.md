@@ -58,9 +58,11 @@ OLLAMA_BASE_URL=http://localhost:11434 OLLAMA_MODEL=gemma4:e4b uv run fastapi de
 ```
 
 The dashboard at <http://localhost:5173> opens the newest completed run. Select
-another run and switch between **Overview** and **Model comparison** to inspect
-quality, latency, token usage, estimated cost, and security. Contains match is
-the primary quality score; exact match is shown as a stricter secondary score.
+another run and switch between **Overview**, **Model comparison**, and **Prompt
+comparison** to inspect quality, latency, token usage, estimated cost, and
+security. Prompt versions are compared within one run across the same models and
+dataset. Contains match is the primary quality score; exact match is shown as a
+stricter secondary score.
 Missing or partial measurements are marked unavailable and are not labelled
 best. The interactive constellation visualizes relative model profiles within
 the selected run; the table remains the source for exact values. Use **Full run

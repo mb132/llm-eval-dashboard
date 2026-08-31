@@ -13,6 +13,8 @@ import type {
 } from "@/api/evaluations"
 
 const RUN_ID = "fe90806e-cf08-4d63-9b60-cc47a46ee0ec"
+const PROMPT_ONE_ID = "87ad64a0-6206-4921-a102-92b75fc25188"
+const PROMPT_TWO_ID = "c84899a0-4956-464e-a364-ec93c7817bf3"
 
 const run: EvaluationRun = {
   id: RUN_ID,
@@ -45,14 +47,20 @@ const quality: EvaluationQualitySummary = {
       version: 1,
       overall: { average_score: 0.7, scored_results: 3, unavailable_results: 1 },
       by_model: [aggregate("a", "Model A", 0.7), aggregate("b", "Model B", 0.8, 1)],
-      by_prompt_version: [],
+      by_prompt_version: [
+        { prompt_version_id: PROMPT_ONE_ID, prompt_name: "Knowledge prompt", prompt_version_number: 1, average_score: 0.7, scored_results: 2, unavailable_results: 0 },
+        { prompt_version_id: PROMPT_TWO_ID, prompt_name: "Knowledge prompt", prompt_version_number: 2, average_score: 0.8, scored_results: 1, unavailable_results: 1 },
+      ],
     },
     {
       method: "normalized_contains_match",
       version: 1,
       overall: { average_score: 0.8, scored_results: 3, unavailable_results: 1 },
       by_model: [aggregate("a", "Model A", 0.8), aggregate("b", "Model B", 0.9, 1)],
-      by_prompt_version: [],
+      by_prompt_version: [
+        { prompt_version_id: PROMPT_ONE_ID, prompt_name: "Knowledge prompt", prompt_version_number: 1, average_score: 0.8, scored_results: 2, unavailable_results: 0 },
+        { prompt_version_id: PROMPT_TWO_ID, prompt_name: "Knowledge prompt", prompt_version_number: 2, average_score: 0.9, scored_results: 1, unavailable_results: 1 },
+      ],
     },
   ],
 }
@@ -64,7 +72,10 @@ const security: EvaluationSecuritySummary = {
     { model_id: "a", model_name: "Model A", score: 0.8, total_tests: 2, passed_tests: 2, failed_tests: 0, unavailable_tests: 0 },
     { model_id: "b", model_name: "Model B", score: 0.9, total_tests: 2, passed_tests: 1, failed_tests: 0, unavailable_tests: 1 },
   ],
-  by_prompt_version: [],
+  by_prompt_version: [
+    { prompt_version_id: PROMPT_ONE_ID, prompt_name: "Knowledge prompt", prompt_version_number: 1, score: 0.5, total_tests: 2, passed_tests: 1, failed_tests: 1, unavailable_tests: 0 },
+    { prompt_version_id: PROMPT_TWO_ID, prompt_name: "Knowledge prompt", prompt_version_number: 2, score: 0.5, total_tests: 2, passed_tests: 1, failed_tests: 0, unavailable_tests: 1 },
+  ],
 }
 
 const performance: EvaluationPerformanceSummary = {
@@ -72,6 +83,10 @@ const performance: EvaluationPerformanceSummary = {
   latency_by_model: [
     { model_id: "a", model_name: "Model A", average_ms: 100, minimum_ms: 90, maximum_ms: 110, recorded_results: 2, unavailable_results: 0 },
     { model_id: "b", model_name: "Model B", average_ms: 80, minimum_ms: 80, maximum_ms: 80, recorded_results: 1, unavailable_results: 1 },
+  ],
+  latency_by_prompt_version: [
+    { prompt_version_id: PROMPT_ONE_ID, prompt_name: "Knowledge prompt", prompt_version_number: 1, average_ms: 100, minimum_ms: 90, maximum_ms: 110, recorded_results: 2, unavailable_results: 0 },
+    { prompt_version_id: PROMPT_TWO_ID, prompt_name: "Knowledge prompt", prompt_version_number: 2, average_ms: 80, minimum_ms: 80, maximum_ms: 80, recorded_results: 1, unavailable_results: 1 },
   ],
   input_tokens: { sum_tokens: 30, recorded_results: 3, unavailable_results: 1 },
   output_tokens: { sum_tokens: 20, recorded_results: 3, unavailable_results: 1 },
@@ -92,6 +107,24 @@ const performance: EvaluationPerformanceSummary = {
       total_tokens: { sum_tokens: 20, recorded_results: 1, unavailable_results: 1 },
     },
   ],
+  token_usage_by_prompt_version: [
+    {
+      prompt_version_id: PROMPT_ONE_ID,
+      prompt_name: "Knowledge prompt",
+      prompt_version_number: 1,
+      input_tokens: { sum_tokens: 20, recorded_results: 2, unavailable_results: 0 },
+      output_tokens: { sum_tokens: 10, recorded_results: 2, unavailable_results: 0 },
+      total_tokens: { sum_tokens: 30, recorded_results: 2, unavailable_results: 0 },
+    },
+    {
+      prompt_version_id: PROMPT_TWO_ID,
+      prompt_name: "Knowledge prompt",
+      prompt_version_number: 2,
+      input_tokens: { sum_tokens: 10, recorded_results: 1, unavailable_results: 1 },
+      output_tokens: { sum_tokens: 10, recorded_results: 1, unavailable_results: 1 },
+      total_tokens: { sum_tokens: 20, recorded_results: 1, unavailable_results: 1 },
+    },
+  ],
 }
 
 const cost: EvaluationCostSummary = {
@@ -102,6 +135,10 @@ const cost: EvaluationCostSummary = {
   by_model: [
     { model_id: "a", model_name: "Model A", estimated_usd: "0.002", priced_results: 2, unavailable_results: 0 },
     { model_id: "b", model_name: "Model B", estimated_usd: "0.001", priced_results: 1, unavailable_results: 1 },
+  ],
+  by_prompt_version: [
+    { prompt_version_id: PROMPT_ONE_ID, prompt_name: "Knowledge prompt", prompt_version_number: 1, estimated_usd: "0.002", priced_results: 2, unavailable_results: 0 },
+    { prompt_version_id: PROMPT_TWO_ID, prompt_name: "Knowledge prompt", prompt_version_number: 2, estimated_usd: "0.001", priced_results: 1, unavailable_results: 1 },
   ],
 }
 
@@ -136,7 +173,7 @@ describe("dashboard", () => {
     expect((await screen.findAllByText("80%")).length).toBeGreaterThan(0)
     expect(screen.getByText("Exact 70%")).toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: "Model comparison" }))
+    await user.click(screen.getByRole("tab", { name: "Model comparison" }))
     expect(
       screen.getByRole("img", { name: /Relative model profile/ }),
     ).toBeInTheDocument()
@@ -156,5 +193,68 @@ describe("dashboard", () => {
         .filter((path) => path.includes("summary"))
         .every((path) => path.includes(RUN_ID)),
     ).toBe(true)
+
+    await user.click(screen.getByRole("tab", { name: "Prompt comparison" }))
+    expect(
+      await screen.findByRole("heading", { name: "Prompt comparison" }),
+    ).toBeInTheDocument()
+    const promptOne = screen.getByRole("row", { name: /Knowledge prompt · v1/ })
+    const promptTwo = screen.getByRole("row", { name: /Knowledge prompt · v2/ })
+    expect(within(promptOne).getAllByText("Best")).toHaveLength(4)
+    expect(within(promptTwo).queryByText("Best")).not.toBeInTheDocument()
+    await user.keyboard("{ArrowLeft}")
+    expect(screen.getByRole("tab", { name: "Model comparison" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+  })
+
+  it("explains unavailable security data and a run with only one prompt", async () => {
+    const user = userEvent.setup()
+    const noSecurity: EvaluationSecuritySummary = {
+      metric_version: 1,
+      overall: {
+        score: null,
+        total_tests: 0,
+        passed_tests: 0,
+        failed_tests: 0,
+        unavailable_tests: 0,
+      },
+      by_model: [],
+      by_prompt_version: [],
+    }
+    fetchMock.mockImplementation(async (input) => {
+      const path = String(input)
+      if (path === "/api/evaluations?offset=0&limit=20") {
+        return jsonResponse({ items: [run], total: 1, completed: 1, failed: 0, offset: 0, limit: 20 })
+      }
+      if (path.endsWith("/quality-summary")) {
+        return jsonResponse({
+          metrics: quality.metrics.map((item) => ({
+            ...item,
+            by_prompt_version: item.by_prompt_version.slice(0, 1),
+          })),
+        })
+      }
+      if (path.endsWith("/security-summary")) return jsonResponse(noSecurity)
+      if (path.endsWith("/performance-summary")) {
+        return jsonResponse({
+          ...performance,
+          latency_by_prompt_version: performance.latency_by_prompt_version.slice(0, 1),
+          token_usage_by_prompt_version: performance.token_usage_by_prompt_version.slice(0, 1),
+        })
+      }
+      if (path.endsWith("/cost-summary")) {
+        return jsonResponse({ ...cost, by_prompt_version: cost.by_prompt_version.slice(0, 1) })
+      }
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    render(<MemoryRouter><App /></MemoryRouter>)
+
+    expect(await screen.findByText("No security tests")).toBeInTheDocument()
+    await user.click(screen.getByRole("tab", { name: "Prompt comparison" }))
+    expect(
+      await screen.findByText(/only one prompt version/i),
+    ).toBeInTheDocument()
   })
 })

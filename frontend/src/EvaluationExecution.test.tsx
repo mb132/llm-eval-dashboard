@@ -137,6 +137,18 @@ const performanceSummary: EvaluationPerformanceSummary = {
       unavailable_results: 0,
     },
   ],
+  latency_by_prompt_version: [
+    {
+      prompt_version_id: VERSION_ID,
+      prompt_name: "Knowledge prompt",
+      prompt_version_number: 1,
+      average_ms: 120,
+      minimum_ms: 120,
+      maximum_ms: 120,
+      recorded_results: 1,
+      unavailable_results: 0,
+    },
+  ],
   input_tokens: { sum_tokens: null, recorded_results: 0, unavailable_results: 1 },
   output_tokens: { sum_tokens: 1, recorded_results: 1, unavailable_results: 0 },
   total_tokens: { sum_tokens: null, recorded_results: 0, unavailable_results: 1 },
@@ -144,6 +156,16 @@ const performanceSummary: EvaluationPerformanceSummary = {
     {
       model_id: "1",
       model_name: "Local model",
+      input_tokens: { sum_tokens: null, recorded_results: 0, unavailable_results: 1 },
+      output_tokens: { sum_tokens: 1, recorded_results: 1, unavailable_results: 0 },
+      total_tokens: { sum_tokens: null, recorded_results: 0, unavailable_results: 1 },
+    },
+  ],
+  token_usage_by_prompt_version: [
+    {
+      prompt_version_id: VERSION_ID,
+      prompt_name: "Knowledge prompt",
+      prompt_version_number: 1,
       input_tokens: { sum_tokens: null, recorded_results: 0, unavailable_results: 1 },
       output_tokens: { sum_tokens: 1, recorded_results: 1, unavailable_results: 0 },
       total_tokens: { sum_tokens: null, recorded_results: 0, unavailable_results: 1 },
@@ -164,6 +186,16 @@ const costSummary: EvaluationCostSummary = {
     {
       model_id: "1",
       model_name: "Local model",
+      estimated_usd: "0.000003000",
+      priced_results: 1,
+      unavailable_results: 0,
+    },
+  ],
+  by_prompt_version: [
+    {
+      prompt_version_id: VERSION_ID,
+      prompt_name: "Knowledge prompt",
+      prompt_version_number: 1,
       estimated_usd: "0.000003000",
       priced_results: 1,
       unavailable_results: 0,

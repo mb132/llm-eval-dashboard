@@ -34,6 +34,16 @@ class ModelLatencyAggregate:
 
 
 @dataclass(frozen=True, slots=True)
+class PromptLatencyAggregate:
+    """Latency aggregation for one immutable prompt version."""
+
+    prompt_version_id: UUID
+    prompt_name: str
+    prompt_version_number: int
+    aggregate: LatencyAggregate
+
+
+@dataclass(frozen=True, slots=True)
 class TokenAggregate:
     """Token sum with explicit availability counts."""
 
@@ -54,15 +64,29 @@ class ModelTokenAggregate:
 
 
 @dataclass(frozen=True, slots=True)
+class PromptTokenAggregate:
+    """Token aggregation for one immutable prompt version."""
+
+    prompt_version_id: UUID
+    prompt_name: str
+    prompt_version_number: int
+    input_tokens: TokenAggregate
+    output_tokens: TokenAggregate
+    total_tokens: TokenAggregate
+
+
+@dataclass(frozen=True, slots=True)
 class PerformanceSummary:
     """Latency and token usage for one evaluation."""
 
     latency: LatencyAggregate
     latency_by_model: list[ModelLatencyAggregate]
+    latency_by_prompt_version: list[PromptLatencyAggregate]
     input_tokens: TokenAggregate
     output_tokens: TokenAggregate
     total_tokens: TokenAggregate
     token_usage_by_model: list[ModelTokenAggregate]
+    token_usage_by_prompt_version: list[PromptTokenAggregate]
 
 
 async def get_performance_summary(
@@ -74,8 +98,10 @@ async def get_performance_summary(
     return PerformanceSummary(
         latency=await _overall_latency(session, evaluation_id),
         latency_by_model=await _latency_by_model(session, evaluation_id),
+        latency_by_prompt_version=await _latency_by_prompt(session, evaluation_id),
         **await _token_aggregates(session, evaluation_id),
         token_usage_by_model=await _tokens_by_model(session, evaluation_id),
+        token_usage_by_prompt_version=await _tokens_by_prompt(session, evaluation_id),
     )
 
 
@@ -134,6 +160,52 @@ async def _latency_by_model(
         for model_id, model_name, average, minimum, maximum, recorded, total in (
             await session.execute(statement)
         )
+    ]
+
+
+async def _latency_by_prompt(
+    session: AsyncSession, evaluation_id: UUID
+) -> list[PromptLatencyAggregate]:
+    statement = (
+        select(
+            EvaluationResult.prompt_version_id,
+            EvaluationResult.prompt_name,
+            EvaluationResult.prompt_version_number,
+            func.avg(EvaluationResult.latency_ms),
+            func.min(EvaluationResult.latency_ms),
+            func.max(EvaluationResult.latency_ms),
+            func.count(EvaluationResult.latency_ms),
+            func.count(EvaluationResult.id),
+        )
+        .where(EvaluationResult.evaluation_id == evaluation_id)
+        .group_by(
+            EvaluationResult.prompt_version_id,
+            EvaluationResult.prompt_name,
+            EvaluationResult.prompt_version_number,
+        )
+        .order_by(
+            EvaluationResult.prompt_name,
+            EvaluationResult.prompt_version_number,
+            EvaluationResult.prompt_version_id,
+        )
+    )
+    return [
+        PromptLatencyAggregate(
+            prompt_version_id=version_id,
+            prompt_name=prompt_name,
+            prompt_version_number=version_number,
+            aggregate=_latency_aggregate(average, minimum, maximum, recorded, total),
+        )
+        for (
+            version_id,
+            prompt_name,
+            version_number,
+            average,
+            minimum,
+            maximum,
+            recorded,
+            total,
+        ) in (await session.execute(statement))
     ]
 
 
@@ -197,6 +269,58 @@ async def _tokens_by_model(
         for (
             model_id,
             model_name,
+            input_sum,
+            input_count,
+            output_sum,
+            output_count,
+            total_sum,
+            total_count,
+            count,
+        ) in (await session.execute(statement))
+    ]
+
+
+async def _tokens_by_prompt(
+    session: AsyncSession, evaluation_id: UUID
+) -> list[PromptTokenAggregate]:
+    statement = (
+        select(
+            EvaluationResult.prompt_version_id,
+            EvaluationResult.prompt_name,
+            EvaluationResult.prompt_version_number,
+            func.sum(EvaluationResult.input_tokens),
+            func.count(EvaluationResult.input_tokens),
+            func.sum(EvaluationResult.output_tokens),
+            func.count(EvaluationResult.output_tokens),
+            func.sum(EvaluationResult.total_tokens),
+            func.count(EvaluationResult.total_tokens),
+            func.count(EvaluationResult.id),
+        )
+        .where(EvaluationResult.evaluation_id == evaluation_id)
+        .group_by(
+            EvaluationResult.prompt_version_id,
+            EvaluationResult.prompt_name,
+            EvaluationResult.prompt_version_number,
+        )
+        .order_by(
+            EvaluationResult.prompt_name,
+            EvaluationResult.prompt_version_number,
+            EvaluationResult.prompt_version_id,
+        )
+    )
+    return [
+        PromptTokenAggregate(
+            prompt_version_id=version_id,
+            prompt_name=prompt_name,
+            prompt_version_number=version_number,
+            input_tokens=_token_aggregate(input_sum, input_count, count),
+            output_tokens=_token_aggregate(output_sum, output_count, count),
+            total_tokens=_token_aggregate(total_sum, total_count, count),
+        )
+        for (
+            version_id,
+            prompt_name,
+            version_number,
             input_sum,
             input_count,
             output_sum,

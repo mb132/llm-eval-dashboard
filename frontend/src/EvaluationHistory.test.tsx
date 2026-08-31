@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -77,5 +78,79 @@ describe("evaluation history", () => {
       "href",
       `/?run=${run.id}`,
     )
+  })
+
+  it("handles active legacy runs without offering an invalid comparison", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        items: [
+          {
+            ...run,
+            status: "running",
+            completed_at: null,
+            completed_requests: 1,
+            successful_requests: 1,
+            failed_requests: 0,
+            models: [],
+            prompt_versions: [],
+          },
+        ],
+        total: 1,
+        completed: 0,
+        failed: 0,
+        offset: 0,
+        limit: 20,
+      }),
+    )
+    render(
+      <MemoryRouter initialEntries={["/evaluations/history"]}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findAllByText(/Unavailable for this historical run/)).toHaveLength(2)
+    expect(screen.queryByRole("link", { name: "Compare models" })).not.toBeInTheDocument()
+    expect(screen.getByRole("link", { name: /Open results/ })).toBeInTheDocument()
+  })
+
+  it("loads older runs without replacing newer history", async () => {
+    const user = userEvent.setup()
+    const older = {
+      ...run,
+      id: "9b60cc47-fe90-4806-bc47-a46ee0ec4956",
+      dataset_name: "Older set",
+      created_at: "2026-08-22T10:00:00Z",
+    }
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ items: [run], total: 2, completed: 2, failed: 0, offset: 0, limit: 20 }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ items: [older], total: 2, completed: 2, failed: 0, offset: 1, limit: 20 }),
+      )
+    render(
+      <MemoryRouter initialEntries={["/evaluations/history"]}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    await screen.findByRole("heading", { name: "Knowledge set evaluation" })
+    await user.click(screen.getByRole("button", { name: "Load older evaluations" }))
+    expect(
+      await screen.findByRole("heading", { name: "Older set evaluation" }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Knowledge set evaluation" })).toBeInTheDocument()
+  })
+
+  it("shows a useful empty state", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ items: [], total: 0, completed: 0, failed: 0, offset: 0, limit: 20 }),
+    )
+    render(
+      <MemoryRouter initialEntries={["/evaluations/history"]}>
+        <App />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByRole("heading", { name: "No evaluations yet" })).toBeInTheDocument()
   })
 })
