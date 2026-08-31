@@ -297,7 +297,14 @@ def test_execution_uses_the_persisted_model_configuration(
     version_id, dataset_id = create_inputs(prompt_client, second_case=False)
     configured = prompt_client.patch(
         "/api/models/1",
-        json={"parameters": {"num_predict": 500}},
+        json={
+            "parameters": {"num_predict": 500},
+            "pricing": {
+                "mode": "manual",
+                "input_usd_per_million_tokens": "2",
+                "output_usd_per_million_tokens": "10",
+            },
+        },
     )
     assert configured.status_code == 200
     run = prompt_client.post(
@@ -356,6 +363,29 @@ def test_execution_uses_the_persisted_model_configuration(
     assert results["items"][0]["generated_output"] == "Paris"
     assert results["items"][0]["reported_model_name"] == "test-model:latest"
     assert results["items"][0]["total_tokens"] == 9
+    assert results["items"][0]["estimated_cost_usd"] == "0.000022000"
+    assert results["items"][0]["pricing"]["source"] == "manual"
+
+    costs = prompt_client.get(f"/api/evaluations/{run['id']}/cost-summary").json()
+    assert costs == {
+        "overall": {
+            "estimated_usd": "0.000022000",
+            "priced_results": 1,
+            "unavailable_results": 0,
+        },
+        "average_complete_test_case_usd": "0.000022000",
+        "complete_test_cases": 1,
+        "incomplete_test_cases": 0,
+        "by_model": [
+            {
+                "model_id": "1",
+                "model_name": "Local model",
+                "estimated_usd": "0.000022000",
+                "priced_results": 1,
+                "unavailable_results": 0,
+            }
+        ],
+    }
 
 
 def test_quality_scores_group_by_model_and_prompt_version(
@@ -551,5 +581,9 @@ def test_execution_endpoints_return_not_found(prompt_client: TestClient) -> None
         prompt_client.get(
             f"/api/evaluations/{missing_id}/performance-summary"
         ).status_code
+        == 404
+    )
+    assert (
+        prompt_client.get(f"/api/evaluations/{missing_id}/cost-summary").status_code
         == 404
     )

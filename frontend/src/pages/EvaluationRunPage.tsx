@@ -15,6 +15,8 @@ import {
   getEvaluationRun,
   getEvaluationQualitySummary,
   getEvaluationPerformanceSummary,
+  getEvaluationCostSummary,
+  type EvaluationCostSummary,
   type EvaluationPerformanceSummary,
   type EvaluationResult,
   type EvaluationQualitySummary,
@@ -44,6 +46,8 @@ export function EvaluationRunPage() {
     useState<EvaluationQualitySummary | null>(null)
   const [performanceSummary, setPerformanceSummary] =
     useState<EvaluationPerformanceSummary | null>(null)
+  const [costSummary, setCostSummary] =
+    useState<EvaluationCostSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -65,19 +69,21 @@ export function EvaluationRunPage() {
           getEvaluationRun(id),
           getEvaluationResults(id, 0, RESULT_PAGE_SIZE),
         ])
-        const [quality, performance] =
+        const [quality, performance, costs] =
           run.status === "completed" || run.status === "failed"
             ? await Promise.all([
                 getEvaluationQualitySummary(id),
                 getEvaluationPerformanceSummary(id),
+                getEvaluationCostSummary(id),
               ])
-            : [null, null]
+            : [null, null, null]
         if (!active) return
         setEvaluation(run)
         setResults(page.items)
         setResultTotal(page.total)
         if (quality) setQualitySummary(quality)
         if (performance) setPerformanceSummary(performance)
+        if (costs) setCostSummary(costs)
         setError(null)
         if (run.status === "pending" || run.status === "running") {
           timeoutId = window.setTimeout(poll, POLL_INTERVAL_MS)
@@ -206,6 +212,7 @@ export function EvaluationRunPage() {
 
       {qualitySummary && <QualitySummary summary={qualitySummary} />}
       {performanceSummary && <PerformanceSummary summary={performanceSummary} />}
+      {costSummary && <CostSummary summary={costSummary} />}
 
       <section className="space-y-4" aria-labelledby="results-heading">
         <div>
@@ -377,7 +384,7 @@ function ResultCard({ result }: { result: EvaluationResult }) {
         {result.status === "pending" && (
           <p className="text-sm text-muted-foreground">Waiting to be processed…</p>
         )}
-        <dl className="grid gap-3 border-t pt-4 sm:grid-cols-4">
+        <dl className="grid gap-3 border-t pt-4 sm:grid-cols-3 lg:grid-cols-6">
           <Metric
             label="Latency"
             value={result.latency_ms === null ? "Unavailable" : `${result.latency_ms} ms`}
@@ -386,7 +393,21 @@ function ResultCard({ result }: { result: EvaluationResult }) {
           <Metric label="Output tokens" value={formatMetric(result.output_tokens)} />
           <Metric label="Max output tokens" value={result.max_output_tokens} />
           <Metric label="Total tokens" value={formatMetric(result.total_tokens)} />
+          <Metric
+            label="Estimated cost"
+            value={formatUsd(result.estimated_cost_usd)}
+          />
         </dl>
+        {result.pricing && (
+          <p className="text-xs text-muted-foreground">
+            Estimate uses ${result.pricing.input_usd_per_million_tokens} input and
+            ${result.pricing.output_usd_per_million_tokens} output per 1M tokens ·{" "}
+            {result.pricing.source} · effective {result.pricing.effective_date}
+            {result.pricing.source_url && (
+              <> · <a className="underline" href={result.pricing.source_url} target="_blank" rel="noreferrer">source</a></>
+            )}
+          </p>
+        )}
         <div className="border-t pt-4">
           <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Quality
@@ -491,6 +512,46 @@ function AggregateMetric({
   )
 }
 
+function CostSummary({ summary }: { summary: EvaluationCostSummary }) {
+  return (
+    <Card className="shadow-sm">
+      <CardHeader>
+        <CardTitle><h2>Estimated costs</h2></CardTitle>
+        <CardDescription>
+          USD estimates from snapshotted model rates and provider-reported token
+          usage. Taxes, discounts, caching, and provider billing adjustments are
+          not included.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <dl className="grid gap-3 sm:grid-cols-2">
+          <Metric label="Evaluation total" value={formatUsd(summary.overall.estimated_usd)} />
+          <Metric label="Average per complete test case" value={formatUsd(summary.average_complete_test_case_usd)} />
+        </dl>
+        <p className="text-xs text-muted-foreground">
+          {summary.overall.priced_results} requests priced · {summary.overall.unavailable_results} unavailable · {summary.complete_test_cases} complete test cases · {summary.incomplete_test_cases} incomplete
+        </p>
+        <div>
+          <h3 className="text-sm font-medium">By model</h3>
+          <dl className="mt-2 space-y-2">
+            {summary.by_model.map((model) => (
+              <div key={model.model_id} className="flex justify-between gap-3 rounded-lg bg-muted p-3">
+                <dt className="text-sm">{model.model_name}</dt>
+                <dd className="text-right text-sm font-semibold">
+                  {formatUsd(model.estimated_usd)}
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    {model.priced_results} priced · {model.unavailable_results} unavailable
+                  </span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function formatLatency(value: number | null): string {
   return value === null
     ? "Unavailable"
@@ -515,6 +576,14 @@ function ErrorMessage({ message }: { message: string }) {
 
 function formatMetric(value: number | null) {
   return value === null ? "Unavailable" : value.toLocaleString()
+}
+
+function formatUsd(value: string | null) {
+  if (value === null) return "Unavailable"
+  const [whole, rawFraction = ""] = value.split(".")
+  const significantFraction = rawFraction.replace(/0+$/, "")
+  const fraction = significantFraction.padEnd(2, "0")
+  return `$${whole}.${fraction}`
 }
 
 function QualitySummary({ summary }: { summary: EvaluationQualitySummary }) {

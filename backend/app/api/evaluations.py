@@ -1,6 +1,6 @@
 """Evaluation configuration, execution, progress, and result endpoints."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, NoReturn, Self
 from uuid import UUID
 
@@ -10,6 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..database import get_session, get_session_factory
 from ..models import EvaluationResult, EvaluationRun
+from ..services.costs import (
+    CostAggregate,
+    CostEvaluationNotFoundError,
+    CostSummary,
+    ModelCostAggregate,
+    get_cost_summary,
+)
 from ..services.evaluation_configuration import (
     MAX_REPETITIONS,
     MAX_SELECTED_MODELS,
@@ -45,6 +52,7 @@ from ..services.performance import (
     TokenAggregate,
     get_performance_summary,
 )
+from ..services.pricing import micro_to_usd_string, nano_to_usd_string
 from ..services.quality import (
     QUALITY_METRICS,
     ModelQualityAggregate,
@@ -201,6 +209,8 @@ class EvaluationResultResponse(BaseModel):
     input_tokens: int | None
     output_tokens: int | None
     total_tokens: int | None
+    pricing: "PricingSnapshotResponse | None"
+    estimated_cost_usd: str | None
     quality_scores: list["QualityScoreResponse"]
     started_at: datetime | None
     completed_at: datetime | None
@@ -224,6 +234,18 @@ class EvaluationRunPageResponse(BaseModel):
     failed: int
     offset: int
     limit: int
+
+
+class PricingSnapshotResponse(BaseModel):
+    """Immutable pricing basis used for one request estimate."""
+
+    input_usd_per_million_tokens: str
+    output_usd_per_million_tokens: str
+    currency: str
+    source: str
+    effective_date: date
+    source_url: str | None
+
 
 class QualityScoreResponse(BaseModel):
     """One versioned score, or null when the request could not be scored."""
@@ -307,6 +329,29 @@ class PerformanceSummaryResponse(BaseModel):
     total_tokens: TokenAggregateResponse
 
 
+class CostAggregateResponse(BaseModel):
+    """A partial cost total with explicit estimate availability."""
+
+    estimated_usd: str | None
+    priced_results: int
+    unavailable_results: int
+
+
+class ModelCostAggregateResponse(CostAggregateResponse):
+    model_id: str
+    model_name: str
+
+
+class EvaluationCostSummaryResponse(BaseModel):
+    """Estimated evaluation costs in USD from immutable price snapshots."""
+
+    overall: CostAggregateResponse
+    average_complete_test_case_usd: str | None
+    complete_test_cases: int
+    incomplete_test_cases: int
+    by_model: list[ModelCostAggregateResponse]
+
+
 def _options_response(options: EvaluationOptions) -> EvaluationOptionsResponse:
     return EvaluationOptionsResponse(
         models=[
@@ -372,6 +417,26 @@ def _run_response(evaluation: EvaluationRun) -> EvaluationRunResponse:
 
 
 def _result_response(result: EvaluationResult) -> EvaluationResultResponse:
+    pricing = None
+    if (
+        result.input_price_micro_usd_per_million is not None
+        and result.output_price_micro_usd_per_million is not None
+        and result.pricing_currency is not None
+        and result.pricing_source is not None
+        and result.pricing_effective_date is not None
+    ):
+        pricing = PricingSnapshotResponse(
+            input_usd_per_million_tokens=micro_to_usd_string(
+                result.input_price_micro_usd_per_million
+            ),
+            output_usd_per_million_tokens=micro_to_usd_string(
+                result.output_price_micro_usd_per_million
+            ),
+            currency=result.pricing_currency,
+            source=result.pricing_source,
+            effective_date=result.pricing_effective_date,
+            source_url=result.pricing_source_url,
+        )
     return EvaluationResultResponse(
         id=result.id,
         sequence_number=result.sequence_number,
@@ -397,6 +462,12 @@ def _result_response(result: EvaluationResult) -> EvaluationResultResponse:
         input_tokens=result.input_tokens,
         output_tokens=result.output_tokens,
         total_tokens=result.total_tokens,
+        pricing=pricing,
+        estimated_cost_usd=(
+            nano_to_usd_string(result.estimated_cost_nano_usd)
+            if result.estimated_cost_nano_usd is not None
+            else None
+        ),
         quality_scores=[
             QualityScoreResponse(
                 method=item.method,
@@ -526,6 +597,40 @@ def _performance_summary_response(
     )
 
 
+def _cost_aggregate_response(aggregate: CostAggregate) -> CostAggregateResponse:
+    return CostAggregateResponse(
+        estimated_usd=(
+            nano_to_usd_string(aggregate.total_nano_usd)
+            if aggregate.total_nano_usd is not None
+            else None
+        ),
+        priced_results=aggregate.priced_results,
+        unavailable_results=aggregate.unavailable_results,
+    )
+
+
+def _model_cost_response(item: ModelCostAggregate) -> ModelCostAggregateResponse:
+    return ModelCostAggregateResponse(
+        model_id=item.model_id,
+        model_name=item.model_name,
+        **_cost_aggregate_response(item.aggregate).model_dump(),
+    )
+
+
+def _cost_summary_response(summary: CostSummary) -> EvaluationCostSummaryResponse:
+    return EvaluationCostSummaryResponse(
+        overall=_cost_aggregate_response(summary.overall),
+        average_complete_test_case_usd=(
+            nano_to_usd_string(summary.average_complete_test_case_nano_usd)
+            if summary.average_complete_test_case_nano_usd is not None
+            else None
+        ),
+        complete_test_cases=summary.complete_test_cases,
+        incomplete_test_cases=summary.incomplete_test_cases,
+        by_model=[_model_cost_response(item) for item in summary.by_model],
+    )
+
+
 def _raise_evaluation_error(exc: Exception) -> NoReturn:
     if isinstance(
         exc,
@@ -534,6 +639,7 @@ def _raise_evaluation_error(exc: Exception) -> NoReturn:
             EvaluationRunNotFoundError,
             PerformanceEvaluationNotFoundError,
             QualityEvaluationNotFoundError,
+            CostEvaluationNotFoundError,
         ),
     ):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -653,6 +759,22 @@ async def read_evaluation_performance_summary(
     except PerformanceEvaluationNotFoundError as exc:
         _raise_evaluation_error(exc)
     return _performance_summary_response(summary)
+
+
+@router.get(
+    "/{evaluation_id}/cost-summary",
+    response_model=EvaluationCostSummaryResponse,
+)
+async def read_evaluation_cost_summary(
+    evaluation_id: UUID,
+    session: DatabaseSession,
+) -> EvaluationCostSummaryResponse:
+    """Return estimated costs with explicit incomplete coverage."""
+    try:
+        summary = await get_cost_summary(session, evaluation_id)
+    except CostEvaluationNotFoundError as exc:
+        _raise_evaluation_error(exc)
+    return _cost_summary_response(summary)
 
 
 @router.get(

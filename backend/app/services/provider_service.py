@@ -47,7 +47,10 @@ async def create_provider(
             payload.api_key, provider_id=provider.id, provider_kind=provider.kind
         )
     await session.commit()
-    return await get_provider(session, provider.id)  # type: ignore[return-value]
+    persisted = await get_provider(session, provider.id)
+    if persisted is None:
+        raise RuntimeError("Created provider could not be reloaded.")
+    return persisted
 
 
 async def update_provider(
@@ -76,7 +79,10 @@ async def update_provider(
             else None
         )
     await session.commit()
-    return await get_provider(session, provider.id)  # type: ignore[return-value]
+    persisted = await get_provider(session, provider.id)
+    if persisted is None:
+        raise RuntimeError("Updated provider could not be reloaded.")
+    return persisted
 
 
 async def delete_provider(

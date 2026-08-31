@@ -52,7 +52,15 @@ def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
         "model_parameters",
         "total_tokens",
         "provider_configuration_id",
+        "input_price_micro_usd_per_million",
+        "output_price_micro_usd_per_million",
+        "estimated_cost_nano_usd",
     } <= column_names(database_path, "evaluation_results")
+    assert {
+        "input_price_micro_usd_per_million",
+        "output_price_micro_usd_per_million",
+        "pricing_effective_date",
+    } <= column_names(database_path, "model_configurations")
 
     command.downgrade(config, "base")
     assert table_names(database_path) == {"alembic_version"}

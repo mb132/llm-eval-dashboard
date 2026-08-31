@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import App from "@/App"
 import type {
+  EvaluationCostSummary,
   EvaluationOptions,
   EvaluationPerformanceSummary,
   EvaluationPreview,
@@ -127,6 +128,26 @@ const performanceSummary: EvaluationPerformanceSummary = {
   total_tokens: { sum_tokens: null, recorded_results: 0, unavailable_results: 1 },
 }
 
+const costSummary: EvaluationCostSummary = {
+  overall: {
+    estimated_usd: "0.000003000",
+    priced_results: 1,
+    unavailable_results: 0,
+  },
+  average_complete_test_case_usd: "0.000003000",
+  complete_test_cases: 1,
+  incomplete_test_cases: 0,
+  by_model: [
+    {
+      model_id: "1",
+      model_name: "Local model",
+      estimated_usd: "0.000003000",
+      priced_results: 1,
+      unavailable_results: 0,
+    },
+  ],
+}
+
 const result: EvaluationResult = {
   id: "c84899a0-4956-464e-a364-ec93c7817bf3",
   sequence_number: 1,
@@ -152,6 +173,8 @@ const result: EvaluationResult = {
   input_tokens: null,
   output_tokens: 1,
   total_tokens: null,
+  pricing: null,
+  estimated_cost_usd: null,
   quality_scores: [
     { method: "normalized_exact_match", version: 1, score: 1 },
     { method: "normalized_contains_match", version: 1, score: 1 },
@@ -205,6 +228,7 @@ describe("evaluation execution", () => {
       )
       .mockResolvedValueOnce(jsonResponse(qualitySummary))
       .mockResolvedValueOnce(jsonResponse(performanceSummary))
+      .mockResolvedValueOnce(jsonResponse(costSummary))
     renderApp("/")
 
     await user.click(await screen.findByRole("checkbox", { name: /Version 1/ }))
@@ -285,6 +309,7 @@ describe("evaluation execution", () => {
       )
       .mockResolvedValueOnce(jsonResponse(qualitySummary))
       .mockResolvedValueOnce(jsonResponse(performanceSummary))
+      .mockResolvedValueOnce(jsonResponse(costSummary))
       .mockResolvedValueOnce(
         jsonResponse({ items: [second], total: 2, offset: 1, limit: 50 }),
       )
@@ -299,6 +324,7 @@ describe("evaluation execution", () => {
     ).toHaveLength(1)
     expect(screen.getByText("Normalized exact match v1")).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Performance" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Estimated costs" })).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Load more results" }))
     await waitFor(() => expect(screen.getByText("2 + 2?")).toBeInTheDocument())
   })

@@ -42,6 +42,7 @@ from .playground import (
     PlaygroundTimeoutError,
     generate_prompt,
 )
+from .pricing import calculate_cost_nano_usd
 from .prompts import INPUT_PLACEHOLDER
 from .quality import QUALITY_METRICS, score_response
 
@@ -251,6 +252,16 @@ async def create_evaluation_run(
                         provider_model_name=model.model_name,
                         model_base_url=model.provider.base_url,
                         model_parameters=dict(model.parameters),
+                        input_price_micro_usd_per_million=(
+                            model.input_price_micro_usd_per_million
+                        ),
+                        output_price_micro_usd_per_million=(
+                            model.output_price_micro_usd_per_million
+                        ),
+                        pricing_currency=model.pricing_currency,
+                        pricing_source=model.pricing_source,
+                        pricing_effective_date=model.pricing_effective_date,
+                        pricing_source_url=model.pricing_source_url,
                         prompt_id=version.prompt_id,
                         prompt_version_id=version.id,
                         prompt_name=prompt_name,
@@ -599,6 +610,12 @@ async def _store_result_success(
             and outcome.output_tokens is not None
         ):
             result.total_tokens = outcome.input_tokens + outcome.output_tokens
+        result.estimated_cost_nano_usd = calculate_cost_nano_usd(
+            result.input_tokens,
+            result.output_tokens,
+            result.input_price_micro_usd_per_million,
+            result.output_price_micro_usd_per_million,
+        )
         result.completed_at = now
         await session.execute(
             update(EvaluationRun)

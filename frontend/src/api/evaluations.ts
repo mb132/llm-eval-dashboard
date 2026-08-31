@@ -114,6 +114,34 @@ export type EvaluationPerformanceSummary = {
   total_tokens: TokenAggregate
 }
 
+export type CostAggregate = {
+  estimated_usd: string | null
+  priced_results: number
+  unavailable_results: number
+}
+
+export type ModelCostAggregate = CostAggregate & {
+  model_id: string
+  model_name: string
+}
+
+export type EvaluationCostSummary = {
+  overall: CostAggregate
+  average_complete_test_case_usd: string | null
+  complete_test_cases: number
+  incomplete_test_cases: number
+  by_model: ModelCostAggregate[]
+}
+
+export type PricingSnapshot = {
+  input_usd_per_million_tokens: string
+  output_usd_per_million_tokens: string
+  currency: string
+  source: string
+  effective_date: string
+  source_url: string | null
+}
+
 export type EvaluationRun = {
   id: string
   status: EvaluationRunStatus
@@ -155,6 +183,8 @@ export type EvaluationResult = {
   input_tokens: number | null
   output_tokens: number | null
   total_tokens: number | null
+  pricing: PricingSnapshot | null
+  estimated_cost_usd: string | null
   quality_scores: QualityScore[]
   started_at: string | null
   completed_at: string | null
@@ -274,5 +304,13 @@ export function getEvaluationPerformanceSummary(
 ): Promise<EvaluationPerformanceSummary> {
   return request<EvaluationPerformanceSummary>(
     `/api/evaluations/${evaluationId}/performance-summary`,
+  )
+}
+
+export function getEvaluationCostSummary(
+  evaluationId: string,
+): Promise<EvaluationCostSummary> {
+  return request<EvaluationCostSummary>(
+    `/api/evaluations/${evaluationId}/cost-summary`,
   )
 }

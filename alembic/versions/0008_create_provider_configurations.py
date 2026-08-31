@@ -55,7 +55,8 @@ def upgrade() -> None:
     rows = list(
         connection.execute(
             sa.text(
-                "SELECT id, provider, base_url, api_key_env_var, created_at FROM model_configurations ORDER BY id"
+                "SELECT id, provider, base_url, api_key_env_var, created_at "
+                "FROM model_configurations ORDER BY id"
             )
         ).mappings()
     )
@@ -66,7 +67,9 @@ def upgrade() -> None:
         if key not in provider_ids:
             result = connection.execute(
                 sa.text(
-                    "INSERT INTO provider_configurations (display_name, kind, base_url, api_key_ciphertext, created_at) VALUES (:name, :kind, :base_url, NULL, :created_at)"
+                    "INSERT INTO provider_configurations "
+                    "(display_name, kind, base_url, api_key_ciphertext, created_at) "
+                    "VALUES (:name, :kind, :base_url, NULL, :created_at)"
                 ),
                 {
                     "name": _provider_name(
@@ -84,13 +87,15 @@ def upgrade() -> None:
     # SQLite permits the update only after the new column exists; repeat mapping now.
     for row in connection.execute(
         sa.text(
-            "SELECT id, provider, base_url, api_key_env_var FROM model_configurations ORDER BY id"
+            "SELECT id, provider, base_url, api_key_env_var "
+            "FROM model_configurations ORDER BY id"
         )
     ).mappings():
         key = (row["provider"], row["base_url"], row["api_key_env_var"])
         connection.execute(
             sa.text(
-                "UPDATE model_configurations SET provider_id = :provider_id WHERE id = :id"
+                "UPDATE model_configurations SET provider_id = :provider_id "
+                "WHERE id = :id"
             ),
             {"provider_id": provider_ids[key], "id": row["id"]},
         )
@@ -118,7 +123,8 @@ def upgrade() -> None:
         sa.text(
             "UPDATE evaluation_results SET provider_configuration_id = "
             "(SELECT provider_id FROM model_configurations "
-            "WHERE model_configurations.id = CAST(evaluation_results.model_id AS INTEGER))"
+            "WHERE model_configurations.id = "
+            "CAST(evaluation_results.model_id AS INTEGER))"
         )
     )
 
@@ -140,7 +146,16 @@ def downgrade() -> None:
         )
     connection.execute(
         sa.text(
-            "UPDATE model_configurations SET provider = (SELECT kind FROM provider_configurations WHERE provider_configurations.id = model_configurations.provider_id), base_url = (SELECT base_url FROM provider_configurations WHERE provider_configurations.id = model_configurations.provider_id), api_key_env_var = CASE (SELECT kind FROM provider_configurations WHERE provider_configurations.id = model_configurations.provider_id) WHEN 'openai' THEN 'OPENAI_API_KEY' WHEN 'anthropic' THEN 'ANTHROPIC_API_KEY' WHEN 'gemini' THEN 'GEMINI_API_KEY' ELSE NULL END"
+            "UPDATE model_configurations SET provider = "
+            "(SELECT kind FROM provider_configurations WHERE "
+            "provider_configurations.id = model_configurations.provider_id), "
+            "base_url = (SELECT base_url FROM provider_configurations WHERE "
+            "provider_configurations.id = model_configurations.provider_id), "
+            "api_key_env_var = CASE (SELECT kind FROM provider_configurations "
+            "WHERE provider_configurations.id = model_configurations.provider_id) "
+            "WHEN 'openai' THEN 'OPENAI_API_KEY' "
+            "WHEN 'anthropic' THEN 'ANTHROPIC_API_KEY' "
+            "WHEN 'gemini' THEN 'GEMINI_API_KEY' ELSE NULL END"
         )
     )
     with op.batch_alter_table("model_configurations") as batch:

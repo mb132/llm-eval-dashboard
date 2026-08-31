@@ -71,6 +71,86 @@ def test_model_configuration_crud_never_returns_secrets(client: TestClient) -> N
     assert client.get("/api/models").json() == []
 
 
+def test_model_pricing_supports_catalog_manual_and_unknown_models(
+    client: TestClient,
+) -> None:
+    provider = create_provider(client, kind="openai", api_key="test-key")
+    catalog = client.post(
+        "/api/models",
+        json={
+            "display_name": "Catalog model",
+            "provider_id": provider["id"],
+            "model_name": "gpt-5.6-sol",
+        },
+    )
+
+    assert catalog.status_code == 201
+    assert catalog.json()["pricing"] == {
+        "input_usd_per_million_tokens": "4.000000",
+        "output_usd_per_million_tokens": "20.000000",
+        "currency": "USD",
+        "source": "catalog",
+        "effective_date": "2026-08-31",
+        "source_url": "https://developers.openai.com/api/docs/models",
+    }
+
+    manual = client.patch(
+        f"/api/models/{catalog.json()['id']}",
+        json={
+            "pricing": {
+                "mode": "manual",
+                "input_usd_per_million_tokens": "0.125",
+                "output_usd_per_million_tokens": "0",
+            }
+        },
+    )
+    assert manual.status_code == 200
+    assert manual.json()["pricing"]["source"] == "manual"
+    assert manual.json()["pricing"]["input_usd_per_million_tokens"] == "0.125000"
+
+    unknown = client.post(
+        "/api/models",
+        json={
+            "display_name": "Future model",
+            "provider_id": provider["id"],
+            "model_name": "future-model",
+        },
+    )
+    assert unknown.status_code == 201
+    assert unknown.json()["pricing"] is None
+
+
+@pytest.mark.parametrize(
+    "pricing",
+    [
+        {"mode": "manual", "input_usd_per_million_tokens": "1"},
+        {
+            "mode": "manual",
+            "input_usd_per_million_tokens": "0.1234567",
+            "output_usd_per_million_tokens": "1",
+        },
+        {
+            "mode": "catalog",
+            "input_usd_per_million_tokens": "1",
+            "output_usd_per_million_tokens": "1",
+        },
+    ],
+)
+def test_invalid_model_pricing_is_rejected(client: TestClient, pricing: dict) -> None:
+    provider = create_provider(client)
+    response = client.post(
+        "/api/models",
+        json={
+            "display_name": "Invalid price",
+            "provider_id": provider["id"],
+            "model_name": "model",
+            "pricing": pricing,
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_ollama_and_openai_compatible_configurations_are_representable(
     client: TestClient,
 ) -> None:
@@ -107,9 +187,7 @@ def test_api_key_value_is_not_persisted(
     client: TestClient,
     evaluation_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    provider = create_provider(
-        client, kind="anthropic", api_key="never-store-this"
-    )
+    provider = create_provider(client, kind="anthropic", api_key="never-store-this")
     response = client.post(
         "/api/models",
         json={

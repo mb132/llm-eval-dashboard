@@ -12,6 +12,9 @@ ollama run gemma4:e4b
 
 ## Develop
 
+Before the first start, copy `.env.example` to `.env` and set
+`LLM_EVAL_MASTER_KEY` as described under **Configure models**.
+
 With [just](https://just.systems/) installed, set up the project and start both
 development servers from the repository root:
 
@@ -74,8 +77,12 @@ paraphrases or prove correctness. The results page also reports full-response
 latency in milliseconds and normalized provider token usage. Total tokens use the
 provider value where available, otherwise the input/output sum. Aggregates
 exclude unavailable values and show their sample counts; missing provider usage
-remains unavailable rather than becoming zero. Cost estimates are added by a
-later feature.
+remains unavailable rather than becoming zero. The model page resolves exact
+known model IDs from a small built-in USD price catalog and supports explicit
+input/output price overrides. Each request snapshots its pricing basis and shows
+estimated request, evaluation, test-case, and per-model costs. Unknown pricing or
+missing token usage remains unavailable; estimates exclude caching, discounts,
+taxes, tools, and provider billing adjustments.
 
 The application has no authentication or tenant isolation and is intended for
 trusted local/demo use only. Do not expose it publicly or store confidential

@@ -1,14 +1,52 @@
 """Validation schemas for model configuration endpoints."""
 
 import json
-from datetime import datetime
-from typing import Any
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .providers import ProviderSummary
 
 MAX_PARAMETERS_JSON_BYTES = 20_000
+
+
+class PricingSelection(BaseModel):
+    """Pricing choice supplied when creating or updating a model."""
+
+    mode: Literal["catalog", "manual", "unavailable"] = "catalog"
+    input_usd_per_million_tokens: Decimal | None = None
+    output_usd_per_million_tokens: Decimal | None = None
+
+    @model_validator(mode="after")
+    def validate_mode(self) -> Self:
+        rates = (
+            self.input_usd_per_million_tokens,
+            self.output_usd_per_million_tokens,
+        )
+        if self.mode == "manual":
+            if any(rate is None for rate in rates):
+                raise ValueError("manual pricing requires input and output prices")
+            for rate in rates:
+                assert rate is not None
+                if not rate.is_finite() or rate < 0 or rate > 1000:
+                    raise ValueError("prices must be between 0 and 1000 USD")
+                exponent = rate.as_tuple().exponent
+                if isinstance(exponent, int) and exponent < -6:
+                    raise ValueError("prices support at most 6 decimal places")
+        elif any(rate is not None for rate in rates):
+            raise ValueError("prices are only accepted in manual mode")
+        return self
+
+
+class ModelPricingResponse(BaseModel):
+    input_usd_per_million_tokens: str
+    output_usd_per_million_tokens: str
+    currency: Literal["USD"]
+    source: Literal["catalog", "manual"]
+    effective_date: date
+    source_url: str | None
 
 
 def validate_model_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
@@ -35,6 +73,7 @@ class ModelConfigurationBase(BaseModel):
     model_name: str = Field(min_length=1, max_length=300)
     parameters: dict[str, Any] = Field(default_factory=dict)
     active: bool = True
+    pricing: PricingSelection = Field(default_factory=PricingSelection)
 
     @field_validator("display_name", "model_name")
     @classmethod
@@ -60,6 +99,13 @@ class ModelConfigurationUpdate(BaseModel):
     model_name: str | None = Field(default=None, min_length=1, max_length=300)
     parameters: dict[str, Any] | None = None
     active: bool | None = None
+    pricing: PricingSelection | None = None
+
+    @model_validator(mode="after")
+    def reject_explicit_null_pricing(self) -> Self:
+        if "pricing" in self.model_fields_set and self.pricing is None:
+            raise ValueError("pricing must not be null")
+        return self
 
     @field_validator("display_name", "model_name")
     @classmethod
@@ -88,6 +134,7 @@ class ModelConfigurationResponse(BaseModel):
     active: bool
     runnable: bool
     unavailable_reason: str | None
+    pricing: ModelPricingResponse | None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

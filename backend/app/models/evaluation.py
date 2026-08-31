@@ -1,11 +1,12 @@
 """Persistent evaluation runs and immutable per-request result snapshots."""
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
     JSON,
     CheckConstraint,
+    Date,
     Float,
     ForeignKey,
     String,
@@ -109,6 +110,32 @@ class EvaluationResult(Base):
             "total_tokens IS NULL OR total_tokens <= 1000000000",
             name="total_tokens_bounded",
         ),
+        CheckConstraint(
+            "(input_price_micro_usd_per_million IS NULL AND "
+            "output_price_micro_usd_per_million IS NULL AND "
+            "pricing_currency IS NULL AND pricing_source IS NULL AND "
+            "pricing_effective_date IS NULL) OR "
+            "(input_price_micro_usd_per_million IS NOT NULL AND "
+            "output_price_micro_usd_per_million IS NOT NULL AND "
+            "pricing_currency = 'USD' AND "
+            "pricing_source IN ('catalog', 'manual') AND "
+            "pricing_effective_date IS NOT NULL)",
+            name="pricing_complete",
+        ),
+        CheckConstraint(
+            "estimated_cost_nano_usd IS NULL OR estimated_cost_nano_usd >= 0",
+            name="estimated_cost_nonnegative",
+        ),
+        CheckConstraint(
+            "input_price_micro_usd_per_million IS NULL OR "
+            "input_price_micro_usd_per_million BETWEEN 0 AND 1000000000",
+            name="input_price_bounded",
+        ),
+        CheckConstraint(
+            "output_price_micro_usd_per_million IS NULL OR "
+            "output_price_micro_usd_per_million BETWEEN 0 AND 1000000000",
+            name="output_price_bounded",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -127,6 +154,13 @@ class EvaluationResult(Base):
     provider_model_name: Mapped[str | None] = mapped_column(String(300))
     model_base_url: Mapped[str | None] = mapped_column(String(2000))
     model_parameters: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    input_price_micro_usd_per_million: Mapped[int | None] = mapped_column()
+    output_price_micro_usd_per_million: Mapped[int | None] = mapped_column()
+    pricing_currency: Mapped[str | None] = mapped_column(String(3))
+    pricing_source: Mapped[str | None] = mapped_column(String(20))
+    pricing_effective_date: Mapped[date | None] = mapped_column(Date)
+    pricing_source_url: Mapped[str | None] = mapped_column(String(2000))
+    estimated_cost_nano_usd: Mapped[int | None] = mapped_column()
     reported_model_name: Mapped[str | None] = mapped_column(String(200))
     prompt_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     prompt_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)

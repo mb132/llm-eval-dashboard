@@ -12,29 +12,41 @@ export type Provider = (typeof PROVIDERS)[number]
 export type ModelConfiguration = {
   id: number
   display_name: string
-  provider: Provider
-  provider_summary?: ProviderConfigurationSummary
+  provider: ProviderConfigurationSummary
   model_name: string
-  base_url: string | null
-  api_key_env_var: string | null
-  has_credentials: boolean
   parameters: Record<string, unknown>
   active: boolean
   runnable: boolean
   unavailable_reason: string | null
+  pricing: ModelPricing | null
   created_at: string
+}
+
+export type PricingSelection =
+  | { mode: "catalog" }
+  | {
+      mode: "manual"
+      input_usd_per_million_tokens: string
+      output_usd_per_million_tokens: string
+    }
+  | { mode: "unavailable" }
+
+export type ModelPricing = {
+  input_usd_per_million_tokens: string
+  output_usd_per_million_tokens: string
+  currency: "USD"
+  source: "catalog" | "manual"
+  effective_date: string
+  source_url: string | null
 }
 
 export type ModelConfigurationInput = {
   display_name: string
-  provider_id?: number
-  /** @deprecated compatibility fields for the legacy form; provider_id is required by the API. */
-  provider?: Provider
+  provider_id: number
   model_name: string
-  base_url?: string | null
-  api_key_env_var?: string | null
   parameters: Record<string, unknown>
   active: boolean
+  pricing?: PricingSelection
 }
 
 export type ProviderConfigurationSummary = {

@@ -13,7 +13,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-os.environ.setdefault("LLM_EVAL_MASTER_KEY", base64.urlsafe_b64encode(b"t" * 32).decode())
+os.environ.setdefault(
+    "LLM_EVAL_MASTER_KEY", base64.urlsafe_b64encode(b"t" * 32).decode()
+)
 
 
 @pytest.fixture
