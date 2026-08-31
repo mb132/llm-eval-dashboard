@@ -132,12 +132,21 @@ export type TokenAggregate = {
   unavailable_results: number
 }
 
+export type ModelTokenAggregate = {
+  model_id: string
+  model_name: string
+  input_tokens: TokenAggregate
+  output_tokens: TokenAggregate
+  total_tokens: TokenAggregate
+}
+
 export type EvaluationPerformanceSummary = {
   latency: LatencyAggregate
   latency_by_model: ModelLatencyAggregate[]
   input_tokens: TokenAggregate
   output_tokens: TokenAggregate
   total_tokens: TokenAggregate
+  token_usage_by_model: ModelTokenAggregate[]
 }
 
 export type CostAggregate = {

@@ -275,6 +275,27 @@ def test_execution_completes_with_individual_provider_failure(
         "recorded_results": 0,
         "unavailable_results": 2,
     }
+    assert performance["token_usage_by_model"] == [
+        {
+            "model_id": "1",
+            "model_name": "Local model",
+            "input_tokens": {
+                "sum_tokens": None,
+                "recorded_results": 0,
+                "unavailable_results": 2,
+            },
+            "output_tokens": {
+                "sum_tokens": 1,
+                "recorded_results": 1,
+                "unavailable_results": 1,
+            },
+            "total_tokens": {
+                "sum_tokens": None,
+                "recorded_results": 0,
+                "unavailable_results": 2,
+            },
+        }
+    ]
     assert performance["output_tokens"] == {
         "sum_tokens": 1,
         "recorded_results": 1,
@@ -461,6 +482,11 @@ def test_quality_scores_group_by_model_and_prompt_version(
         "recorded_results": 4,
         "unavailable_results": 0,
     }
+    assert len(performance["token_usage_by_model"]) == 2
+    assert {
+        item["total_tokens"]["sum_tokens"]
+        for item in performance["token_usage_by_model"]
+    } == {4}
 
 
 def test_security_results_score_and_group_with_unavailable_in_denominator(

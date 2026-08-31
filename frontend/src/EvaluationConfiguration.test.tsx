@@ -66,7 +66,7 @@ const emptyArchive = {
 
 function renderEvaluation() {
   return render(
-    <MemoryRouter initialEntries={["/"]}>
+    <MemoryRouter initialEntries={["/evaluations/new"]}>
       <App />
     </MemoryRouter>,
   )

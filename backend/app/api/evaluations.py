@@ -47,6 +47,7 @@ from ..services.evaluation_execution import (
 from ..services.performance import (
     LatencyAggregate,
     ModelLatencyAggregate,
+    ModelTokenAggregate,
     PerformanceEvaluationNotFoundError,
     PerformanceSummary,
     TokenAggregate,
@@ -359,6 +360,16 @@ class TokenAggregateResponse(BaseModel):
     unavailable_results: int
 
 
+class ModelTokenAggregateResponse(BaseModel):
+    """Token sums grouped by immutable model selection."""
+
+    model_id: str
+    model_name: str
+    input_tokens: TokenAggregateResponse
+    output_tokens: TokenAggregateResponse
+    total_tokens: TokenAggregateResponse
+
+
 class PerformanceSummaryResponse(BaseModel):
     """Persisted latency and token usage for an evaluation."""
 
@@ -367,6 +378,7 @@ class PerformanceSummaryResponse(BaseModel):
     input_tokens: TokenAggregateResponse
     output_tokens: TokenAggregateResponse
     total_tokens: TokenAggregateResponse
+    token_usage_by_model: list[ModelTokenAggregateResponse]
 
 
 class CostAggregateResponse(BaseModel):
@@ -675,6 +687,16 @@ def _token_response(aggregate: TokenAggregate) -> TokenAggregateResponse:
     )
 
 
+def _model_token_response(item: ModelTokenAggregate) -> ModelTokenAggregateResponse:
+    return ModelTokenAggregateResponse(
+        model_id=item.model_id,
+        model_name=item.model_name,
+        input_tokens=_token_response(item.input_tokens),
+        output_tokens=_token_response(item.output_tokens),
+        total_tokens=_token_response(item.total_tokens),
+    )
+
+
 def _performance_summary_response(
     summary: PerformanceSummary,
 ) -> PerformanceSummaryResponse:
@@ -686,6 +708,9 @@ def _performance_summary_response(
         input_tokens=_token_response(summary.input_tokens),
         output_tokens=_token_response(summary.output_tokens),
         total_tokens=_token_response(summary.total_tokens),
+        token_usage_by_model=[
+            _model_token_response(item) for item in summary.token_usage_by_model
+        ],
     )
 
 

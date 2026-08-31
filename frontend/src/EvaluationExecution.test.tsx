@@ -140,6 +140,15 @@ const performanceSummary: EvaluationPerformanceSummary = {
   input_tokens: { sum_tokens: null, recorded_results: 0, unavailable_results: 1 },
   output_tokens: { sum_tokens: 1, recorded_results: 1, unavailable_results: 0 },
   total_tokens: { sum_tokens: null, recorded_results: 0, unavailable_results: 1 },
+  token_usage_by_model: [
+    {
+      model_id: "1",
+      model_name: "Local model",
+      input_tokens: { sum_tokens: null, recorded_results: 0, unavailable_results: 1 },
+      output_tokens: { sum_tokens: 1, recorded_results: 1, unavailable_results: 0 },
+      total_tokens: { sum_tokens: null, recorded_results: 0, unavailable_results: 1 },
+    },
+  ],
 }
 
 const costSummary: EvaluationCostSummary = {
@@ -248,7 +257,7 @@ describe("evaluation execution", () => {
       .mockResolvedValueOnce(jsonResponse(securitySummary))
       .mockResolvedValueOnce(jsonResponse(performanceSummary))
       .mockResolvedValueOnce(jsonResponse(costSummary))
-    renderApp("/")
+    renderApp("/evaluations/new")
 
     await user.click(await screen.findByRole("checkbox", { name: /Version 1/ }))
     await user.click(screen.getByRole("radio", { name: /Knowledge set/ }))

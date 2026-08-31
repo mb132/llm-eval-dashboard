@@ -43,6 +43,17 @@ class TokenAggregate:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelTokenAggregate:
+    """Token aggregation for one immutable model selection."""
+
+    model_id: str
+    model_name: str
+    input_tokens: TokenAggregate
+    output_tokens: TokenAggregate
+    total_tokens: TokenAggregate
+
+
+@dataclass(frozen=True, slots=True)
 class PerformanceSummary:
     """Latency and token usage for one evaluation."""
 
@@ -51,6 +62,7 @@ class PerformanceSummary:
     input_tokens: TokenAggregate
     output_tokens: TokenAggregate
     total_tokens: TokenAggregate
+    token_usage_by_model: list[ModelTokenAggregate]
 
 
 async def get_performance_summary(
@@ -63,6 +75,7 @@ async def get_performance_summary(
         latency=await _overall_latency(session, evaluation_id),
         latency_by_model=await _latency_by_model(session, evaluation_id),
         **await _token_aggregates(session, evaluation_id),
+        token_usage_by_model=await _tokens_by_model(session, evaluation_id),
     )
 
 
@@ -152,3 +165,44 @@ async def _token_aggregates(
         "output_tokens": _token_aggregate(output_sum, output_count, count),
         "total_tokens": _token_aggregate(total_sum, total_count, count),
     }
+
+
+async def _tokens_by_model(
+    session: AsyncSession, evaluation_id: UUID
+) -> list[ModelTokenAggregate]:
+    statement = (
+        select(
+            EvaluationResult.model_id,
+            EvaluationResult.model_name,
+            func.sum(EvaluationResult.input_tokens),
+            func.count(EvaluationResult.input_tokens),
+            func.sum(EvaluationResult.output_tokens),
+            func.count(EvaluationResult.output_tokens),
+            func.sum(EvaluationResult.total_tokens),
+            func.count(EvaluationResult.total_tokens),
+            func.count(EvaluationResult.id),
+        )
+        .where(EvaluationResult.evaluation_id == evaluation_id)
+        .group_by(EvaluationResult.model_id, EvaluationResult.model_name)
+        .order_by(EvaluationResult.model_name, EvaluationResult.model_id)
+    )
+    return [
+        ModelTokenAggregate(
+            model_id=model_id,
+            model_name=model_name,
+            input_tokens=_token_aggregate(input_sum, input_count, count),
+            output_tokens=_token_aggregate(output_sum, output_count, count),
+            total_tokens=_token_aggregate(total_sum, total_count, count),
+        )
+        for (
+            model_id,
+            model_name,
+            input_sum,
+            input_count,
+            output_sum,
+            output_count,
+            total_sum,
+            total_count,
+            count,
+        ) in (await session.execute(statement))
+    ]

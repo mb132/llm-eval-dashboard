@@ -268,7 +268,7 @@ function BackLink() {
       className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
     >
       <ArrowLeft className="size-4" />
-      New evaluation
+      Dashboard
     </Link>
   )
 }
@@ -346,6 +346,23 @@ function PerformanceSummary({ summary }: { summary: EvaluationPerformanceSummary
             <AggregateMetric label="Output" aggregate={summary.output_tokens} />
             <AggregateMetric label="Total" aggregate={summary.total_tokens} />
           </dl>
+          <h4 className="mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Total by model
+          </h4>
+          <ul className="mt-2 space-y-2 text-sm">
+            {summary.token_usage_by_model.map((model) => (
+              <li key={model.model_id} className="flex justify-between gap-3">
+                <span>{model.model_name}</span>
+                <span className="text-right text-muted-foreground">
+                  {formatMetric(model.total_tokens.sum_tokens)} ·{" "}
+                  {formatAvailability(
+                    model.total_tokens.recorded_results,
+                    model.total_tokens.unavailable_results,
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       </CardContent>
     </Card>

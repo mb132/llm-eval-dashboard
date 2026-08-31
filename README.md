@@ -57,7 +57,15 @@ either value when needed:
 OLLAMA_BASE_URL=http://localhost:11434 OLLAMA_MODEL=gemma4:e4b uv run fastapi dev backend/app/main.py
 ```
 
-Evaluation configuration is available at <http://localhost:5173>. Its model
+The dashboard at <http://localhost:5173> opens the newest completed run. Select
+another run and switch between **Overview** and **Model comparison** to inspect
+quality, latency, token usage, estimated cost, and security. Contains match is
+the primary quality score; exact match is shown as a stricter secondary score.
+Missing or partial measurements are marked unavailable and are not labelled
+best. Use **Full run details** to inspect individual requests.
+
+Evaluation configuration is available at
+<http://localhost:5173/evaluations/new>. Its model
 multi-select lists active persisted configurations with executable provider
 protocols. Evaluations support selecting and comparing multiple model IDs.
 

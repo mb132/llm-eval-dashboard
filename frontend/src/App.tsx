@@ -1,6 +1,7 @@
 import {
   Database,
   FlaskConical,
+  LayoutDashboard,
   MessageSquareText,
   Settings2,
   SquareTerminal,
@@ -9,6 +10,7 @@ import { NavLink, Route, Routes } from "react-router-dom"
 
 import { DatasetDetailPage } from "@/pages/DatasetDetailPage"
 import { DatasetsPage } from "@/pages/DatasetsPage"
+import { DashboardPage } from "@/pages/DashboardPage"
 import { EvaluationPage } from "@/pages/EvaluationPage"
 import { EvaluationRunPage } from "@/pages/EvaluationRunPage"
 import { ModelsPage } from "@/pages/models-page-v2"
@@ -17,7 +19,8 @@ import { PromptDetailPage } from "@/pages/PromptDetailPage"
 import { PromptsPage } from "@/pages/PromptsPage"
 
 const navigation = [
-  { to: "/", label: "Evaluation", icon: FlaskConical, end: true },
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/evaluations/new", label: "New evaluation", icon: FlaskConical, end: true },
   { to: "/prompts", label: "Prompts", icon: MessageSquareText, end: false },
   { to: "/datasets", label: "Datasets", icon: Database, end: false },
   { to: "/playground", label: "Playground", icon: SquareTerminal, end: false },
@@ -52,7 +55,8 @@ export default function App() {
         </nav>
 
         <Routes>
-          <Route index element={<EvaluationPage />} />
+          <Route index element={<DashboardPage />} />
+          <Route path="evaluations/new" element={<EvaluationPage />} />
           <Route path="evaluations/:evaluationId" element={<EvaluationRunPage />} />
           <Route path="prompts" element={<PromptsPage />} />
           <Route path="prompts/:promptId" element={<PromptDetailPage />} />
