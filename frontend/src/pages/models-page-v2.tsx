@@ -1,5 +1,5 @@
-import { KeyRound, Pencil, Plus, Trash2 } from "lucide-react"
-import { useCallback, useEffect, useState, type FormEvent } from "react"
+import { KeyRound, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react"
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 
 import {
   createModel,
@@ -50,8 +50,13 @@ export function ModelsPage() {
   const [modelDialog, setModelDialog] = useState(false)
   const [pricingModel, setPricingModel] = useState<ModelConfiguration | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const initialLoadStarted = useRef(false)
 
   const load = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
     try {
       const [nextProviders, nextModels] = await Promise.all([
         listProviders(),
@@ -59,12 +64,17 @@ export function ModelsPage() {
       ])
       setProviders(nextProviders)
       setModels(nextModels)
+      setHasLoaded(true)
     } catch (caught) {
       setError(errorMessage(caught))
+    } finally {
+      setIsLoading(false)
     }
   }, [])
 
   useEffect(() => {
+    if (initialLoadStarted.current) return
+    initialLoadStarted.current = true
     void load()
   }, [load])
 
@@ -89,7 +99,7 @@ export function ModelsPage() {
   }
 
   return (
-    <section className="space-y-8">
+    <section className="space-y-8" aria-busy={isLoading}>
       <div>
         <Badge variant="secondary">Configuration</Badge>
         <h1 className="mt-3 text-3xl font-semibold">Models</h1>
@@ -108,12 +118,14 @@ export function ModelsPage() {
 
       <ProviderList
         providers={providers}
+        isLoading={isLoading && !hasLoaded}
         onAdd={() => setProviderDialog(true)}
         onRemove={removeProvider}
       />
       <ModelList
         providersAvailable={providers.length > 0}
         models={models}
+        isLoading={isLoading && !hasLoaded}
         onAdd={() => setModelDialog(true)}
         onEditPricing={setPricingModel}
         onRemove={removeModel}
@@ -170,10 +182,12 @@ export function ModelsPage() {
 
 function ProviderList({
   providers,
+  isLoading,
   onAdd,
   onRemove,
 }: {
   providers: ProviderConfiguration[]
+  isLoading: boolean
   onAdd: () => void
   onRemove: (provider: ProviderConfiguration) => Promise<void>
 }) {
@@ -187,11 +201,13 @@ function ProviderList({
               API keys are encrypted and never shown again.
             </p>
           </div>
-          <Button onClick={onAdd}>
+          <Button disabled={isLoading} onClick={onAdd}>
             <Plus className="mr-2 size-4" /> Add provider
           </Button>
         </div>
-        {providers.length === 0 ? (
+        {isLoading ? (
+          <LoadingRow label="Loading providers…" />
+        ) : providers.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No providers yet. Add one to store its connection and API key.
           </p>
@@ -230,12 +246,14 @@ function ProviderList({
 function ModelList({
   providersAvailable,
   models,
+  isLoading,
   onAdd,
   onEditPricing,
   onRemove,
 }: {
   providersAvailable: boolean
   models: ModelConfiguration[]
+  isLoading: boolean
   onAdd: () => void
   onEditPricing: (model: ModelConfiguration) => void
   onRemove: (model: ModelConfiguration) => Promise<void>
@@ -250,48 +268,63 @@ function ModelList({
               Choose a provider connection for each model.
             </p>
           </div>
-          <Button disabled={!providersAvailable} onClick={onAdd}>
+          <Button disabled={isLoading || !providersAvailable} onClick={onAdd}>
             <Plus className="mr-2 size-4" /> Add model
           </Button>
         </div>
-        {!providersAvailable && (
+        {isLoading ? (
+          <LoadingRow label="Loading models…" />
+        ) : !providersAvailable ? (
           <p className="text-sm text-muted-foreground">Create a provider first.</p>
+        ) : models.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No models yet. Add one to make it available for evaluations.
+          </p>
+        ) : (
+          models.map((model) => (
+            <div
+              key={model.id}
+              className="flex items-center justify-between gap-3 rounded border p-3"
+            >
+              <div>
+                <div className="font-medium">{model.display_name}</div>
+                <div className="text-xs text-muted-foreground">
+                  {model.model_name} · {model.provider.display_name}
+                  {!model.runnable && ` · ${model.unavailable_reason}`}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {formatModelPricing(model)}
+                </div>
+              </div>
+              <div className="flex">
+                <Button
+                  className="bg-transparent p-2 text-foreground hover:bg-muted"
+                  aria-label={`Edit pricing for ${model.display_name}`}
+                  onClick={() => onEditPricing(model)}
+                >
+                  <Pencil className="size-4" />
+                </Button>
+                <Button
+                  className="bg-transparent p-2 text-foreground hover:bg-muted"
+                  aria-label={`Remove ${model.display_name}`}
+                  onClick={() => void onRemove(model)}
+                >
+                  <Trash2 className="size-4 text-red-600" />
+                </Button>
+              </div>
+            </div>
+          ))
         )}
-        {models.map((model) => (
-          <div
-            key={model.id}
-            className="flex items-center justify-between gap-3 rounded border p-3"
-          >
-            <div>
-              <div className="font-medium">{model.display_name}</div>
-              <div className="text-xs text-muted-foreground">
-                {model.model_name} · {model.provider.display_name}
-                {!model.runnable && ` · ${model.unavailable_reason}`}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                {formatModelPricing(model)}
-              </div>
-            </div>
-            <div className="flex">
-              <Button
-                className="bg-transparent p-2 text-foreground hover:bg-muted"
-                aria-label={`Edit pricing for ${model.display_name}`}
-                onClick={() => onEditPricing(model)}
-              >
-                <Pencil className="size-4" />
-              </Button>
-              <Button
-                className="bg-transparent p-2 text-foreground hover:bg-muted"
-                aria-label={`Remove ${model.display_name}`}
-                onClick={() => void onRemove(model)}
-              >
-                <Trash2 className="size-4 text-red-600" />
-              </Button>
-            </div>
-          </div>
-        ))}
       </CardContent>
     </Card>
+  )
+}
+
+function LoadingRow({ label }: { label: string }) {
+  return (
+    <p className="flex min-h-16 items-center gap-2 rounded border bg-muted/30 px-3 text-sm text-muted-foreground">
+      <LoaderCircle className="size-4 animate-spin" /> {label}
+    </p>
   )
 }
 

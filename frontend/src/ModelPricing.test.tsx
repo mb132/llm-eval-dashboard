@@ -1,5 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { StrictMode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { ModelConfiguration } from "@/api/models"
@@ -50,6 +51,39 @@ describe("model pricing", () => {
   beforeEach(() => {
     fetchMock.mockReset()
     vi.stubGlobal("fetch", fetchMock)
+  })
+
+  it("keeps stable loading states until providers and models are both available", async () => {
+    let resolveProviders!: (response: Response) => void
+    let resolveModels!: (response: Response) => void
+    const providersResponse = new Promise<Response>((resolve) => {
+      resolveProviders = resolve
+    })
+    const modelsResponse = new Promise<Response>((resolve) => {
+      resolveModels = resolve
+    })
+    fetchMock.mockImplementation((input) =>
+      String(input) === "/api/providers" ? providersResponse : modelsResponse,
+    )
+
+    render(<StrictMode><ModelsPage /></StrictMode>)
+
+    expect(screen.getByText("Loading providers…")).toBeInTheDocument()
+    expect(screen.getByText("Loading models…")).toBeInTheDocument()
+    expect(screen.queryByText(/No providers yet/)).not.toBeInTheDocument()
+    expect(screen.queryByText("Create a provider first.")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Add provider" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Add model" })).toBeDisabled()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      resolveProviders(jsonResponse([provider]))
+      resolveModels(jsonResponse([model]))
+    })
+
+    expect(await screen.findByText("OpenAI work")).toBeInTheDocument()
+    expect(screen.getByText("Flagship")).toBeInTheDocument()
+    expect(screen.queryByText("Loading providers…")).not.toBeInTheDocument()
   })
 
   it("creates an unknown model with explicit manual rates", async () => {
