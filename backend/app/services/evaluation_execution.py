@@ -82,10 +82,36 @@ class ResultPage:
 
 
 @dataclass(frozen=True, slots=True)
+class RunModelSnapshot:
+    """One immutable model identity represented in an archived run."""
+
+    id: str
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class RunPromptSnapshot:
+    """One immutable prompt version represented in an archived run."""
+
+    id: UUID
+    name: str
+    version_number: int
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationRunArchiveItem:
+    """A run plus the configuration identities needed by the history UI."""
+
+    run: EvaluationRun
+    models: list[RunModelSnapshot]
+    prompt_versions: list[RunPromptSnapshot]
+
+
+@dataclass(frozen=True, slots=True)
 class EvaluationRunPage:
     """One bounded page of persisted evaluation runs and archive totals."""
 
-    items: list[EvaluationRun]
+    items: list[EvaluationRunArchiveItem]
     total: int
     completed: int
     failed: int
@@ -342,8 +368,59 @@ async def list_evaluation_runs(
         .offset(offset)
         .limit(limit)
     )
+    runs = list(await session.scalars(statement))
+    run_ids = [run.id for run in runs]
+    models_by_run: dict[UUID, list[RunModelSnapshot]] = {
+        run_id: [] for run_id in run_ids
+    }
+    prompts_by_run: dict[UUID, list[RunPromptSnapshot]] = {
+        run_id: [] for run_id in run_ids
+    }
+    if run_ids:
+        model_rows = await session.execute(
+            select(
+                EvaluationResult.evaluation_id,
+                EvaluationResult.model_id,
+                EvaluationResult.model_name,
+            )
+            .where(EvaluationResult.evaluation_id.in_(run_ids))
+            .distinct()
+            .order_by(EvaluationResult.model_name, EvaluationResult.model_id)
+        )
+        for run_id, model_id, model_name in model_rows:
+            models_by_run[run_id].append(RunModelSnapshot(id=model_id, name=model_name))
+        prompt_rows = await session.execute(
+            select(
+                EvaluationResult.evaluation_id,
+                EvaluationResult.prompt_version_id,
+                EvaluationResult.prompt_name,
+                EvaluationResult.prompt_version_number,
+            )
+            .where(EvaluationResult.evaluation_id.in_(run_ids))
+            .distinct()
+            .order_by(
+                EvaluationResult.prompt_name,
+                EvaluationResult.prompt_version_number,
+                EvaluationResult.prompt_version_id,
+            )
+        )
+        for run_id, version_id, prompt_name, version_number in prompt_rows:
+            prompts_by_run[run_id].append(
+                RunPromptSnapshot(
+                    id=version_id,
+                    name=prompt_name,
+                    version_number=version_number,
+                )
+            )
     return EvaluationRunPage(
-        items=list(await session.scalars(statement)),
+        items=[
+            EvaluationRunArchiveItem(
+                run=run,
+                models=models_by_run[run.id],
+                prompt_versions=prompts_by_run[run.id],
+            )
+            for run in runs
+        ],
         total=total,
         completed=completed,
         failed=failed,

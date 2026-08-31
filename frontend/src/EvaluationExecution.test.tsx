@@ -237,16 +237,6 @@ describe("evaluation execution", () => {
     const user = userEvent.setup()
     fetchMock
       .mockResolvedValueOnce(jsonResponse(options))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          items: [],
-          total: 0,
-          completed: 0,
-          failed: 0,
-          offset: 0,
-          limit: 20,
-        }),
-      )
       .mockResolvedValueOnce(jsonResponse(preview))
       .mockResolvedValueOnce(jsonResponse({ ...completedRun, status: "pending" }, 202))
       .mockResolvedValueOnce(jsonResponse(completedRun))
@@ -267,7 +257,7 @@ describe("evaluation execution", () => {
     expect(
       await screen.findByRole("heading", { name: "Evaluation run" }),
     ).toBeInTheDocument()
-    const startCall = fetchMock.mock.calls[3]
+    const startCall = fetchMock.mock.calls[2]
     expect(String(startCall[0])).toBe("/api/evaluations")
     expect(JSON.parse(String(startCall[1]?.body))).toEqual({
       model_ids: ["1"],

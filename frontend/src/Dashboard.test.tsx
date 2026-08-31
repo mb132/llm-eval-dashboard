@@ -137,10 +137,24 @@ describe("dashboard", () => {
     expect(screen.getByText("Exact 70%")).toBeInTheDocument()
 
     await user.click(screen.getByRole("button", { name: "Model comparison" }))
+    expect(
+      screen.getByRole("img", { name: /Relative model profile/ }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Model A" }))
+    expect(screen.getByRole("button", { name: "Model A" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
     const modelA = await screen.findByRole("row", { name: /Model A/ })
     const modelB = screen.getByRole("row", { name: /Model B/ })
     expect(within(modelA).getAllByText("Best")).toHaveLength(4)
     expect(within(modelB).queryByText("Best")).not.toBeInTheDocument()
     expect(within(modelB).getAllByText("1 unavailable").length).toBeGreaterThan(0)
+    expect(
+      fetchMock.mock.calls
+        .map(([input]) => String(input))
+        .filter((path) => path.includes("summary"))
+        .every((path) => path.includes(RUN_ID)),
+    ).toBe(true)
   })
 })

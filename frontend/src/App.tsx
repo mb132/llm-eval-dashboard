@@ -1,6 +1,7 @@
 import {
   Database,
   FlaskConical,
+  History,
   LayoutDashboard,
   MessageSquareText,
   Settings2,
@@ -12,6 +13,7 @@ import { DatasetDetailPage } from "@/pages/DatasetDetailPage"
 import { DatasetsPage } from "@/pages/DatasetsPage"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { EvaluationPage } from "@/pages/EvaluationPage"
+import { EvaluationHistoryPage } from "@/pages/EvaluationHistoryPage"
 import { EvaluationRunPage } from "@/pages/EvaluationRunPage"
 import { ModelsPage } from "@/pages/models-page-v2"
 import { PlaygroundPage } from "@/pages/playground-page"
@@ -20,6 +22,7 @@ import { PromptsPage } from "@/pages/PromptsPage"
 
 const navigation = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/evaluations/history", label: "History", icon: History, end: true },
   { to: "/evaluations/new", label: "New evaluation", icon: FlaskConical, end: true },
   { to: "/prompts", label: "Prompts", icon: MessageSquareText, end: false },
   { to: "/datasets", label: "Datasets", icon: Database, end: false },
@@ -57,6 +60,7 @@ export default function App() {
         <Routes>
           <Route index element={<DashboardPage />} />
           <Route path="evaluations/new" element={<EvaluationPage />} />
+          <Route path="evaluations/history" element={<EvaluationHistoryPage />} />
           <Route path="evaluations/:evaluationId" element={<EvaluationRunPage />} />
           <Route path="prompts" element={<PromptsPage />} />
           <Route path="prompts/:promptId" element={<PromptDetailPage />} />

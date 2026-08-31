@@ -10,14 +10,11 @@ import { Link, useNavigate } from "react-router-dom"
 
 import {
   getEvaluationOptions,
-  getPastEvaluations,
   previewEvaluation,
   startEvaluation,
   type EvaluationConfiguration,
   type EvaluationOptions,
   type EvaluationPreview,
-  type EvaluationRun,
-  type EvaluationRunPage,
 } from "@/api/evaluations"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,8 +26,6 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-
-const PAST_EVALUATIONS_PAGE_SIZE = 20
 
 export function EvaluationPage() {
   const navigate = useNavigate()
@@ -48,15 +43,6 @@ export function EvaluationPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [startError, setStartError] = useState<string | null>(null)
-  const [pastEvaluations, setPastEvaluations] = useState<EvaluationRun[]>([])
-  const [pastEvaluationPage, setPastEvaluationPage] =
-    useState<EvaluationRunPage | null>(null)
-  const [isLoadingPastEvaluations, setIsLoadingPastEvaluations] = useState(true)
-  const [isLoadingMorePastEvaluations, setIsLoadingMorePastEvaluations] =
-    useState(false)
-  const [pastEvaluationsError, setPastEvaluationsError] = useState<string | null>(
-    null,
-  )
 
   useEffect(() => {
     let active = true
@@ -82,52 +68,6 @@ export function EvaluationPage() {
       active = false
     }
   }, [])
-
-  useEffect(() => {
-    let active = true
-    getPastEvaluations(0, PAST_EVALUATIONS_PAGE_SIZE)
-      .then((page) => {
-        if (!active) return
-        setPastEvaluations(page.items)
-        setPastEvaluationPage(page)
-        setPastEvaluationsError(null)
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setPastEvaluationsError(
-            error instanceof Error
-              ? error.message
-              : "Could not load past evaluations.",
-          )
-        }
-      })
-      .finally(() => {
-        if (active) setIsLoadingPastEvaluations(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [])
-
-  async function loadMorePastEvaluations() {
-    if (!pastEvaluationPage || isLoadingMorePastEvaluations) return
-    setIsLoadingMorePastEvaluations(true)
-    try {
-      const page = await getPastEvaluations(
-        pastEvaluations.length,
-        PAST_EVALUATIONS_PAGE_SIZE,
-      )
-      setPastEvaluations((current) => [...current, ...page.items])
-      setPastEvaluationPage(page)
-      setPastEvaluationsError(null)
-    } catch (error) {
-      setPastEvaluationsError(
-        error instanceof Error ? error.message : "Could not load past evaluations.",
-      )
-    } finally {
-      setIsLoadingMorePastEvaluations(false)
-    }
-  }
 
   const promptGroups = useMemo(() => {
     const groups = new Map<string, EvaluationOptions["prompt_versions"]>()
@@ -440,92 +380,7 @@ export function EvaluationPage() {
           )}
         </aside>
       </form>
-      <PastEvaluations
-        evaluations={pastEvaluations}
-        page={pastEvaluationPage}
-        isLoading={isLoadingPastEvaluations}
-        isLoadingMore={isLoadingMorePastEvaluations}
-        error={pastEvaluationsError}
-        onLoadMore={loadMorePastEvaluations}
-      />
     </div>
-  )
-}
-
-function PastEvaluations({
-  evaluations,
-  page,
-  isLoading,
-  isLoadingMore,
-  error,
-  onLoadMore,
-}: {
-  evaluations: EvaluationRun[]
-  page: EvaluationRunPage | null
-  isLoading: boolean
-  isLoadingMore: boolean
-  error: string | null
-  onLoadMore: () => void
-}) {
-  return (
-    <section className="space-y-4" aria-labelledby="past-evaluations-heading">
-      <div>
-        <h2 id="past-evaluations-heading" className="text-2xl font-semibold">
-          Past Evaluations
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Reopen any saved run to inspect its complete stored request results.
-        </p>
-      </div>
-      {page && (
-        <dl className="grid gap-3 sm:grid-cols-3">
-          <SummaryValue label="Saved runs" value={page.total} />
-          <SummaryValue label="Completed" value={page.completed} />
-          <SummaryValue label="Failed" value={page.failed} />
-        </dl>
-      )}
-      {isLoading && (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin" /> Loading past evaluations…
-        </p>
-      )}
-      {error && <ErrorMessage message={error} />}
-      {!isLoading && !error && evaluations.length === 0 && (
-        <p className="rounded-lg border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
-          No evaluations have been saved yet.
-        </p>
-      )}
-      <div className="space-y-3">
-        {evaluations.map((evaluation) => (
-          <Link
-            key={evaluation.id}
-            to={`/evaluations/${evaluation.id}`}
-            className="block rounded-lg border bg-background p-4 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="font-medium">{evaluation.dataset_name}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {new Date(evaluation.created_at).toLocaleString()} · {evaluation.total_requests} model requests
-                </p>
-              </div>
-              <Badge variant="outline">{evaluation.status}</Badge>
-            </div>
-            <dl className="mt-4 grid gap-2 sm:grid-cols-3">
-              <SummaryValue label="Completed" value={evaluation.completed_requests} />
-              <SummaryValue label="Successful" value={evaluation.successful_requests} />
-              <SummaryValue label="Failed" value={evaluation.failed_requests} />
-            </dl>
-          </Link>
-        ))}
-      </div>
-      {page && evaluations.length < page.total && (
-        <Button type="button" disabled={isLoadingMore} onClick={onLoadMore}>
-          {isLoadingMore && <LoaderCircle className="mr-2 size-4 animate-spin" />}
-          {isLoadingMore ? "Loading…" : "Load more evaluations"}
-        </Button>
-      )}
-    </section>
   )
 }
 

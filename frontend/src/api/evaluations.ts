@@ -193,6 +193,11 @@ export type EvaluationRun = {
   completed_at: string | null
 }
 
+export type EvaluationRunHistory = EvaluationRun & {
+  models: { id: string; name: string }[]
+  prompt_versions: { id: string; name: string; version_number: number }[]
+}
+
 export type EvaluationResult = {
   id: string
   sequence_number: number
@@ -234,7 +239,7 @@ export type EvaluationResult = {
 }
 
 export type EvaluationRunPage = {
-  items: EvaluationRun[]
+  items: EvaluationRunHistory[]
   total: number
   completed: number
   failed: number

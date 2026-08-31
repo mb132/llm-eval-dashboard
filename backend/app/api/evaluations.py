@@ -35,6 +35,7 @@ from ..services.evaluation_execution import (
     DEFAULT_RUN_PAGE_SIZE,
     MAX_RESULT_PAGE_SIZE,
     MAX_RUN_PAGE_SIZE,
+    EvaluationRunArchiveItem,
     EvaluationRunNotFoundError,
     EvaluationRunPage,
     ResultPage,
@@ -189,6 +190,24 @@ class EvaluationRunResponse(BaseModel):
     completed_at: datetime | None
 
 
+class EvaluationRunModelResponse(BaseModel):
+    id: str
+    name: str
+
+
+class EvaluationRunPromptVersionResponse(BaseModel):
+    id: UUID
+    name: str
+    version_number: int
+
+
+class EvaluationRunHistoryResponse(EvaluationRunResponse):
+    """Archived run with immutable model and prompt identities."""
+
+    models: list[EvaluationRunModelResponse]
+    prompt_versions: list[EvaluationRunPromptVersionResponse]
+
+
 class EvaluationResultResponse(BaseModel):
     """One stored request snapshot and its current outcome."""
 
@@ -239,7 +258,7 @@ class EvaluationResultPageResponse(BaseModel):
 class EvaluationRunPageResponse(BaseModel):
     """Bounded archive page with all-time run health totals."""
 
-    items: list[EvaluationRunResponse]
+    items: list[EvaluationRunHistoryResponse]
     total: int
     completed: int
     failed: int
@@ -563,12 +582,32 @@ def _result_page_response(page: ResultPage) -> EvaluationResultPageResponse:
 
 def _run_page_response(page: EvaluationRunPage) -> EvaluationRunPageResponse:
     return EvaluationRunPageResponse(
-        items=[_run_response(item) for item in page.items],
+        items=[_run_history_response(item) for item in page.items],
         total=page.total,
         completed=page.completed,
         failed=page.failed,
         offset=page.offset,
         limit=page.limit,
+    )
+
+
+def _run_history_response(
+    item: EvaluationRunArchiveItem,
+) -> EvaluationRunHistoryResponse:
+    return EvaluationRunHistoryResponse(
+        **_run_response(item.run).model_dump(),
+        models=[
+            EvaluationRunModelResponse(id=model.id, name=model.name)
+            for model in item.models
+        ],
+        prompt_versions=[
+            EvaluationRunPromptVersionResponse(
+                id=prompt.id,
+                name=prompt.name,
+                version_number=prompt.version_number,
+            )
+            for prompt in item.prompt_versions
+        ],
     )
 
 

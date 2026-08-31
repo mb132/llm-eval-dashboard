@@ -62,7 +62,13 @@ another run and switch between **Overview** and **Model comparison** to inspect
 quality, latency, token usage, estimated cost, and security. Contains match is
 the primary quality score; exact match is shown as a stricter secondary score.
 Missing or partial measurements are marked unavailable and are not labelled
-best. Use **Full run details** to inspect individual requests.
+best. The interactive constellation visualizes relative model profiles within
+the selected run; the table remains the source for exact values. Use **Full run
+details** to inspect individual requests.
+
+**History** at <http://localhost:5173/evaluations/history> lists saved runs
+newest first with their immutable model and prompt-version snapshots. Open a run
+for individual results or send a completed run directly to the dashboard.
 
 Evaluation configuration is available at
 <http://localhost:5173/evaluations/new>. Its model

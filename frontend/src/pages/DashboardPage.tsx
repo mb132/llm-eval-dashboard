@@ -6,6 +6,7 @@ import {
   Coins,
   FlaskConical,
   Gauge,
+  History,
   LoaderCircle,
   RefreshCw,
   ShieldCheck,
@@ -195,6 +196,12 @@ export function DashboardPage() {
                 Full run details <ArrowRight className="size-4" />
               </Link>
             )}
+            <Link
+              to="/evaluations/history"
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-white/20 px-3 text-sm font-medium text-slate-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+            >
+              <History className="size-4" /> History
+            </Link>
           </div>
         </div>
       </section>
@@ -401,7 +408,91 @@ function ModelComparison({ summaries }: { summaries: Summaries }) {
           </TableBody>
         </Table>
       </Card>
+      {rows.length >= 2 && <ModelProfilePlot rows={rows} />}
     </section>
+  )
+}
+
+function ModelProfilePlot({ rows }: { rows: ComparisonRow[] }) {
+  const [highlighted, setHighlighted] = useState<string | null>(null)
+  const axes = profileAxes(rows)
+  const colors = ["#0891b2", "#4f46e5", "#c026d3", "#ea580c", "#16a34a"]
+  const x = (index: number) => 55 + index * 130
+  const y = (value: number) => 32 + (1 - value) * 150
+
+  return (
+    <Card className="overflow-hidden border-slate-200 bg-slate-950 text-white">
+      <CardHeader className="gap-3 sm:flex sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle>Model performance constellation</CardTitle>
+          <p className="mt-2 max-w-2xl text-sm text-slate-300">
+            A relative profile within this run. Higher positions are better;
+            latency, token use, and cost are inverted. Exact values remain in the table.
+          </p>
+        </div>
+        <Badge className="w-fit border-white/20 bg-white/10 text-white" variant="outline">
+          Same dataset · same run
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <svg
+            viewBox="0 0 630 225"
+            className="min-w-[620px]"
+            role="img"
+            aria-label="Relative model profile across quality, latency, token use, cost, and security"
+          >
+            <defs>
+              <linearGradient id="profile-grid" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0" stopColor="#67e8f9" stopOpacity="0.25" />
+                <stop offset="1" stopColor="#818cf8" stopOpacity="0.04" />
+              </linearGradient>
+            </defs>
+            <rect x="35" y="24" width="560" height="166" rx="12" fill="url(#profile-grid)" />
+            {[0, 0.5, 1].map((tick) => (
+              <line key={tick} x1="35" x2="595" y1={y(tick)} y2={y(tick)} stroke="white" strokeOpacity="0.12" strokeDasharray="4 5" />
+            ))}
+            {axes.map((axis, index) => (
+              <g key={axis.label}>
+                <line x1={x(index)} x2={x(index)} y1="32" y2="182" stroke="white" strokeOpacity="0.16" />
+                <text x={x(index)} y="211" fill="#cbd5e1" fontSize="11" textAnchor="middle">{axis.label}</text>
+              </g>
+            ))}
+            {rows.map((row, rowIndex) => {
+              const points = axes.map((axis, index) => {
+                const value = axis.value(row)
+                return value === null ? null : `${x(index)},${y(value)}`
+              })
+              const visible = highlighted === null || highlighted === row.id
+              return (
+                <g key={row.id} opacity={visible ? 1 : 0.18}>
+                  {profileSegments(points).map((segment, index) => (
+                    <polyline key={index} points={segment} fill="none" stroke={colors[rowIndex % colors.length]} strokeWidth={highlighted === row.id ? 4 : 2.5} strokeLinejoin="round" />
+                  ))}
+                  {points.map((point, index) => point && (
+                    <circle key={axes[index].label} cx={Number(point.split(",")[0])} cy={Number(point.split(",")[1])} r={highlighted === row.id ? 5 : 3.5} fill={colors[rowIndex % colors.length]} stroke="#020617" strokeWidth="2" />
+                  ))}
+                </g>
+              )
+            })}
+          </svg>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2" aria-label="Highlight model">
+          {rows.map((row, index) => (
+            <button
+              key={row.id}
+              type="button"
+              aria-pressed={highlighted === row.id}
+              onClick={() => setHighlighted((current) => current === row.id ? null : row.id)}
+              className="inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+            >
+              <span className="size-2 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
+              {row.name}
+            </button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -594,6 +685,70 @@ function comparisonRows(summaries: Summaries) {
 }
 
 type ComparisonRow = ReturnType<typeof comparisonRows>[number]
+
+function profileAxes(rows: ComparisonRow[]) {
+  const latencyValues = rows.flatMap((row) => nullableValue(completeLatency(row.latency)))
+  const tokenValues = rows.flatMap((row) =>
+    nullableValue(
+      row.tokens?.total_tokens.sum_tokens !== null &&
+        row.tokens?.total_tokens.sum_tokens !== undefined &&
+        row.tokens.total_tokens.unavailable_results === 0
+        ? row.tokens.total_tokens.sum_tokens
+        : null,
+    ),
+  )
+  const costValues = rows.flatMap((row) => nullableValue(completeCost(row.cost)))
+  return [
+    { label: "Quality", value: (row: ComparisonRow) => completeScore(row.contains) },
+    {
+      label: "Latency",
+      value: (row: ComparisonRow) => relativeProfile(completeLatency(row.latency), latencyValues),
+    },
+    {
+      label: "Token use",
+      value: (row: ComparisonRow) => relativeProfile(
+        row.tokens?.total_tokens.sum_tokens !== null &&
+          row.tokens?.total_tokens.sum_tokens !== undefined &&
+          row.tokens.total_tokens.unavailable_results === 0
+          ? row.tokens.total_tokens.sum_tokens
+          : null,
+        tokenValues,
+      ),
+    },
+    {
+      label: "Cost",
+      value: (row: ComparisonRow) => relativeProfile(completeCost(row.cost), costValues),
+    },
+    { label: "Security", value: (row: ComparisonRow) => completeSecurity(row.security) },
+  ]
+}
+
+function nullableValue(value: number | null) {
+  return value === null ? [] : [value]
+}
+
+function relativeProfile(value: number | null, values: number[]) {
+  if (value === null || values.length === 0) return null
+  const minimum = Math.min(...values)
+  const maximum = Math.max(...values)
+  if (minimum === maximum) return 0.5
+  return 1 - (value - minimum) / (maximum - minimum)
+}
+
+function profileSegments(points: (string | null)[]) {
+  const segments: string[] = []
+  let current: string[] = []
+  for (const point of points) {
+    if (point) {
+      current.push(point)
+    } else {
+      if (current.length > 1) segments.push(current.join(" "))
+      current = []
+    }
+  }
+  if (current.length > 1) segments.push(current.join(" "))
+  return segments
+}
 
 function completeScore(value: ModelQualityAggregate | undefined) {
   return value?.average_score !== null && value?.average_score !== undefined && value.unavailable_results === 0 ? value.average_score : null

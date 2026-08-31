@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Clock3,
+  History,
   LoaderCircle,
   RefreshCw,
   XCircle,
@@ -178,7 +179,15 @@ export function EvaluationRunPage() {
               {evaluation.dataset_name} · {evaluation.total_requests} model requests
             </p>
           </div>
-          <StatusBadge status={evaluation.status} />
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              to="/evaluations/history"
+              className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+            >
+              <History className="size-4" /> History
+            </Link>
+            <StatusBadge status={evaluation.status} />
+          </div>
         </div>
       </header>
 

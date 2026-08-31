@@ -184,6 +184,14 @@ def test_evaluation_archive_lists_newest_runs_with_health_summary(
     assert archive["offset"] == 0
     assert archive["limit"] == 1
     assert [item["id"] for item in archive["items"]] == [second["id"]]
+    assert archive["items"][0]["models"] == [{"id": MODEL_ID, "name": "Local model"}]
+    assert archive["items"][0]["prompt_versions"] == [
+        {
+            "id": version_id,
+            "name": "Execution prompt",
+            "version_number": 1,
+        }
+    ]
     assert first["id"] != second["id"]
     assert prompt_client.get("/api/evaluations?limit=101").status_code == 422
 
