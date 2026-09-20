@@ -1,7 +1,7 @@
 """Evaluation configuration, execution, progress, and result endpoints."""
 
 from datetime import date, datetime
-from typing import Annotated, NoReturn, Self
+from typing import Annotated, Literal, NoReturn, Self
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -39,6 +39,7 @@ from ..services.evaluation_execution import (
     EvaluationRunArchiveItem,
     EvaluationRunNotFoundError,
     EvaluationRunPage,
+    ResultFilters,
     ResultPage,
     create_evaluation_run,
     execute_evaluation_run,
@@ -226,6 +227,7 @@ class EvaluationResultResponse(BaseModel):
     prompt_name: str
     prompt_version_number: int
     test_case_id: UUID
+    test_category: str | None
     case_type: str
     security_test_type: str | None
     security_metric_version: int | None
@@ -254,8 +256,28 @@ class EvaluationResultPageResponse(BaseModel):
 
     items: list[EvaluationResultResponse]
     total: int
+    unfiltered_total: int
     offset: int
     limit: int
+    filter_options: "ResultFilterOptionsResponse"
+
+
+class ResultFilterModelResponse(BaseModel):
+    id: str
+    name: str
+
+
+class ResultFilterPromptVersionResponse(BaseModel):
+    id: UUID
+    name: str
+    version_number: int
+
+
+class ResultFilterOptionsResponse(BaseModel):
+    models: list[ResultFilterModelResponse]
+    prompt_versions: list[ResultFilterPromptVersionResponse]
+    categories: list[str]
+    has_uncategorized_category: bool
 
 
 class EvaluationRunPageResponse(BaseModel):
@@ -548,6 +570,7 @@ def _result_response(result: EvaluationResult) -> EvaluationResultResponse:
         prompt_name=result.prompt_name,
         prompt_version_number=result.prompt_version_number,
         test_case_id=result.test_case_id,
+        test_category=result.test_category,
         case_type=result.case_type,
         security_test_type=result.security_test_type,
         security_metric_version=result.security_metric_version,
@@ -602,8 +625,23 @@ def _result_page_response(page: ResultPage) -> EvaluationResultPageResponse:
     return EvaluationResultPageResponse(
         items=[_result_response(item) for item in page.items],
         total=page.total,
+        unfiltered_total=page.unfiltered_total,
         offset=page.offset,
         limit=page.limit,
+        filter_options=ResultFilterOptionsResponse(
+            models=[
+                ResultFilterModelResponse(id=item.id, name=item.name)
+                for item in page.filter_options.models
+            ],
+            prompt_versions=[
+                ResultFilterPromptVersionResponse(
+                    id=item.id, name=item.name, version_number=item.version_number
+                )
+                for item in page.filter_options.prompt_versions
+            ],
+            categories=page.filter_options.categories,
+            has_uncategorized_category=page.filter_options.has_uncategorized_category,
+        ),
     )
 
 
@@ -1030,6 +1068,12 @@ async def read_evaluation_results(
         int,
         Query(ge=1, le=MAX_RESULT_PAGE_SIZE),
     ] = DEFAULT_RESULT_PAGE_SIZE,
+    model_id: Annotated[list[str], Query()] = [],
+    prompt_version_id: Annotated[list[UUID], Query()] = [],
+    category: Annotated[list[str], Query()] = [],
+    uncategorized: bool = False,
+    outcome: Literal["passed", "failed", "unavailable"] | None = None,
+    case_type: Literal["standard", "security"] | None = None,
 ) -> EvaluationResultPageResponse:
     """Return one bounded page of stored result snapshots."""
     try:
@@ -1038,6 +1082,14 @@ async def read_evaluation_results(
             evaluation_id,
             offset=offset,
             limit=limit,
+            filters=ResultFilters(
+                model_ids=tuple(model_id),
+                prompt_version_ids=tuple(prompt_version_id),
+                categories=tuple(category),
+                include_uncategorized_category=uncategorized,
+                outcome=outcome,
+                case_type=case_type,
+            ),
         )
     except EvaluationRunNotFoundError as exc:
         _raise_evaluation_error(exc)

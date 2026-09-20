@@ -98,6 +98,12 @@ def test_start_persists_complete_immutable_request_plan(
     """Persist every rendered combination before scheduling provider work."""
     scheduled = disable_background_execution(monkeypatch)
     version_id, dataset_id = create_inputs(prompt_client)
+    dataset = prompt_client.get(f"/api/datasets/{dataset_id}").json()
+    categorized = prompt_client.patch(
+        f"/api/datasets/{dataset_id}/test-cases/{dataset['test_cases'][0]['id']}",
+        json={"category": "Geography"},
+    )
+    assert categorized.status_code == 200
 
     response = prompt_client.post(
         "/api/evaluations",
@@ -125,6 +131,7 @@ def test_start_persists_complete_immutable_request_plan(
     assert stored[0].rendered_prompt == "Answer this exactly: Capital of France?"
     assert all("{{input}}" not in item.rendered_prompt for item in stored)
     assert stored[0].expected_output == "Paris"
+    assert stored[0].test_category == "Geography"
     assert stored[0].max_output_tokens == 1024
     assert stored[0].provider_model_name == "test-model:latest"
     assert stored[0].model_base_url == "http://localhost:11434"
@@ -143,6 +150,9 @@ def test_start_persists_complete_immutable_request_plan(
     assert first_page.json()["total"] == 4
     assert len(first_page.json()["items"]) == 1
     assert first_page.json()["items"][0]["total_tokens"] is None
+    assert first_page.json()["items"][0]["test_category"] == "Geography"
+    assert first_page.json()["unfiltered_total"] == 4
+    assert first_page.json()["filter_options"]["categories"] == ["Geography"]
     performance = prompt_client.get(
         f"/api/evaluations/{run['id']}/performance-summary"
     ).json()
@@ -246,6 +256,27 @@ def test_execution_completes_with_individual_provider_failure(
     assert all(item["score"] is None for item in results[1]["quality_scores"])
     assert results[1]["error_code"] == "synthetic"
     assert results[1]["error_message"] == "Synthetic provider failure."
+
+    dataset = prompt_client.get(f"/api/datasets/{dataset_id}").json()
+    categorized = prompt_client.patch(
+        f"/api/datasets/{dataset_id}/test-cases/{dataset['test_cases'][0]['id']}",
+        json={"category": "Geography"},
+    )
+    assert categorized.status_code == 200
+    filtered = prompt_client.get(
+        f"/api/evaluations/{run['id']}/results?category=Geography&outcome=passed"
+    ).json()
+    assert filtered["total"] == 0
+    assert filtered["unfiltered_total"] == 2
+
+    # The snapshot retains the category present at evaluation creation, rather
+    # than adopting a category later assigned to the editable dataset.
+    assert prompt_client.get(
+        f"/api/evaluations/{run['id']}/results?uncategorized=true&outcome=passed"
+    ).json()["total"] == 1
+    assert prompt_client.get(
+        f"/api/evaluations/{run['id']}/results?outcome=unavailable"
+    ).json()["total"] == 1
 
     summary = prompt_client.get(f"/api/evaluations/{run['id']}/quality-summary").json()
     assert [metric["method"] for metric in summary["metrics"]] == [
@@ -601,6 +632,15 @@ def test_security_results_score_and_group_with_unavailable_in_denominator(
     assert [item["security_status"] for item in results].count("failed") == 1
     assert [item["security_status"] for item in results].count("unavailable") == 1
     assert all(item["quality_scores"] == [] for item in results)
+    assert prompt_client.get(
+        f"/api/evaluations/{run['id']}/results?case_type=security&outcome=passed"
+    ).json()["total"] == 2
+    assert prompt_client.get(
+        f"/api/evaluations/{run['id']}/results?outcome=failed"
+    ).json()["total"] == 1
+    assert prompt_client.get(
+        f"/api/evaluations/{run['id']}/results?outcome=unavailable"
+    ).json()["total"] == 1
 
     summary = prompt_client.get(f"/api/evaluations/{run['id']}/security-summary").json()
     assert summary["metric_version"] == 1

@@ -100,6 +100,12 @@ estimated request, evaluation, test-case, and per-model costs. Unknown pricing o
 missing token usage remains unavailable; estimates exclude caching, discounts,
 taxes, tools, and provider billing adjustments.
 
+Individual results can be filtered within a run by model, prompt version, test
+category, outcome, and normal or security test type. Normal outcomes use the
+normalized contains-match score; security outcomes use the stored security
+assessment. Categories are snapshotted when a run starts, so older runs without
+a saved category appear as “Uncategorized / not recorded”.
+
 Security test cases support direct prompt injection, instruction override, and
 system-prompt extraction attempts. Their expected-answer field is a synthetic
 forbidden marker: exposing it fails the test, while unavailable requests remain

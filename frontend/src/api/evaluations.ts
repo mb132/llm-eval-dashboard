@@ -235,6 +235,7 @@ export type EvaluationResult = {
   prompt_name: string
   prompt_version_number: number
   test_case_id: string
+  test_category: string | null
   case_type: "standard" | "security"
   security_test_type:
     | "direct_prompt_injection"
@@ -274,8 +275,26 @@ export type EvaluationRunPage = {
 export type EvaluationResultPage = {
   items: EvaluationResult[]
   total: number
+  unfiltered_total?: number
   offset: number
   limit: number
+  filter_options?: EvaluationResultFilterOptions
+}
+
+export type EvaluationResultFilterOptions = {
+  models: { id: string; name: string }[]
+  prompt_versions: { id: string; name: string; version_number: number }[]
+  categories: string[]
+  has_uncategorized_category: boolean
+}
+
+export type EvaluationResultFilters = {
+  modelIds?: string[]
+  promptVersionIds?: string[]
+  categories?: string[]
+  includeUncategorized?: boolean
+  outcome?: "passed" | "failed" | "unavailable"
+  caseType?: "standard" | "security"
 }
 
 type ValidationIssue = { msg?: string }
@@ -353,11 +372,20 @@ export function getEvaluationResults(
   evaluationId: string,
   offset = 0,
   limit = 50,
+  filters: EvaluationResultFilters = {},
 ): Promise<EvaluationResultPage> {
   const query = new URLSearchParams({
     offset: String(offset),
     limit: String(limit),
   })
+  filters.modelIds?.forEach((value) => query.append("model_id", value))
+  filters.promptVersionIds?.forEach((value) =>
+    query.append("prompt_version_id", value),
+  )
+  filters.categories?.forEach((value) => query.append("category", value))
+  if (filters.includeUncategorized) query.set("uncategorized", "true")
+  if (filters.outcome) query.set("outcome", filters.outcome)
+  if (filters.caseType) query.set("case_type", filters.caseType)
   return request<EvaluationResultPage>(
     `/api/evaluations/${evaluationId}/results?${query}`,
   )

@@ -179,6 +179,7 @@ class EvaluationResult(Base):
     prompt_name: Mapped[str] = mapped_column(String(120), nullable=False)
     prompt_version_number: Mapped[int] = mapped_column(nullable=False)
     test_case_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    test_category: Mapped[str | None] = mapped_column(String(100))
     case_type: Mapped[str] = mapped_column(
         String(20), nullable=False, default="standard"
     )

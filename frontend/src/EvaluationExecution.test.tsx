@@ -216,6 +216,7 @@ const result: EvaluationResult = {
   prompt_name: "Knowledge prompt",
   prompt_version_number: 1,
   test_case_id: "f0d638d3-3545-4890-be30-8f026fc967a2",
+  test_category: null,
   case_type: "standard",
   security_test_type: null,
   security_metric_version: null,
@@ -421,6 +422,6 @@ describe("evaluation execution", () => {
       screen.getByText("1 passed · 1 failed · 1 unavailable · 3 total"),
     ).toBeInTheDocument()
     expect(screen.getByText("Failure marker")).toBeInTheDocument()
-    expect(screen.getByText("Failed")).toBeInTheDocument()
+    expect(screen.getAllByText("Failed").length).toBeGreaterThan(0)
   })
 })

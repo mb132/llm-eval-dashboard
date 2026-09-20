@@ -9,7 +9,7 @@ import {
   XCircle,
 } from "lucide-react"
 import { useEffect, useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 
 import {
   getEvaluationResults,
@@ -21,6 +21,8 @@ import {
   type EvaluationCostSummary,
   type EvaluationPerformanceSummary,
   type EvaluationResult,
+  type EvaluationResultFilterOptions,
+  type EvaluationResultFilters,
   type EvaluationQualitySummary,
   type EvaluationSecuritySummary,
   type QualityAggregate,
@@ -37,15 +39,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Select } from "@/components/ui/select"
 
 const POLL_INTERVAL_MS = 1_500
 const RESULT_PAGE_SIZE = 50
 
 export function EvaluationRunPage() {
   const { evaluationId } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [evaluation, setEvaluation] = useState<EvaluationRun | null>(null)
   const [results, setResults] = useState<EvaluationResult[]>([])
   const [resultTotal, setResultTotal] = useState(0)
+  const [unfilteredResultTotal, setUnfilteredResultTotal] = useState(0)
+  const [filterOptions, setFilterOptions] =
+    useState<EvaluationResultFilterOptions | null>(null)
   const [qualitySummary, setQualitySummary] =
     useState<EvaluationQualitySummary | null>(null)
   const [securitySummary, setSecuritySummary] =
@@ -58,6 +65,8 @@ export function EvaluationRunPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  const filters = filtersFromSearchParams(searchParams)
+  const filterKey = searchParams.toString()
 
   useEffect(() => {
     const id = evaluationId ?? ""
@@ -73,7 +82,7 @@ export function EvaluationRunPage() {
       try {
         const [run, page] = await Promise.all([
           getEvaluationRun(id),
-          getEvaluationResults(id, 0, RESULT_PAGE_SIZE),
+          getEvaluationResults(id, 0, RESULT_PAGE_SIZE, filters),
         ])
         const [quality, security, performance, costs] =
           run.status === "completed" || run.status === "failed"
@@ -88,6 +97,8 @@ export function EvaluationRunPage() {
         setEvaluation(run)
         setResults(page.items)
         setResultTotal(page.total)
+        setUnfilteredResultTotal(page.unfiltered_total ?? page.total)
+        setFilterOptions(page.filter_options ?? null)
         if (quality) setQualitySummary(quality)
         if (security) setSecuritySummary(security)
         if (performance) setPerformanceSummary(performance)
@@ -113,7 +124,7 @@ export function EvaluationRunPage() {
       active = false
       if (timeoutId !== undefined) window.clearTimeout(timeoutId)
     }
-  }, [evaluationId, retryKey])
+  }, [evaluationId, filterKey, retryKey])
 
   async function loadMore() {
     if (!evaluationId || isLoadingMore) return
@@ -123,9 +134,12 @@ export function EvaluationRunPage() {
         evaluationId,
         results.length,
         RESULT_PAGE_SIZE,
+        filters,
       )
       setResults((current) => [...current, ...page.items])
       setResultTotal(page.total)
+      setUnfilteredResultTotal(page.unfiltered_total ?? page.total)
+      setFilterOptions(page.filter_options ?? null)
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -242,6 +256,13 @@ export function EvaluationRunPage() {
             Raw outputs, execution metrics, and quality scores are shown together.
           </p>
         </div>
+        <ResultFiltersPanel
+          options={filterOptions}
+          filters={filters}
+          onChange={(next) => setSearchParams(searchParamsFromFilters(next))}
+          matchingCount={resultTotal}
+          totalCount={unfilteredResultTotal}
+        />
         {error && (
           <div className="flex flex-wrap items-center gap-3">
             <ErrorMessage message={error} />
@@ -259,6 +280,11 @@ export function EvaluationRunPage() {
             <ResultCard key={result.id} result={result} />
           ))}
         </div>
+        {results.length === 0 && !error && (
+          <p className="rounded-md border border-dashed p-5 text-sm text-muted-foreground">
+            No results match these filters.
+          </p>
+        )}
         {results.length < resultTotal && !isActive && (
           <Button type="button" disabled={isLoadingMore} onClick={loadMore}>
             {isLoadingMore && <LoaderCircle className="mr-2 size-4 animate-spin" />}
@@ -267,6 +293,199 @@ export function EvaluationRunPage() {
         )}
       </section>
     </div>
+  )
+}
+
+function filtersFromSearchParams(searchParams: URLSearchParams): EvaluationResultFilters {
+  const outcome = searchParams.get("outcome")
+  const caseType = searchParams.get("case_type")
+  return {
+    modelIds: searchParams.getAll("model_id"),
+    promptVersionIds: searchParams.getAll("prompt_version_id"),
+    categories: searchParams.getAll("category"),
+    includeUncategorized: searchParams.get("uncategorized") === "true",
+    outcome:
+      outcome === "passed" || outcome === "failed" || outcome === "unavailable"
+        ? outcome
+        : undefined,
+    caseType: caseType === "standard" || caseType === "security" ? caseType : undefined,
+  }
+}
+
+function searchParamsFromFilters(filters: EvaluationResultFilters): URLSearchParams {
+  const searchParams = new URLSearchParams()
+  filters.modelIds?.forEach((value) => searchParams.append("model_id", value))
+  filters.promptVersionIds?.forEach((value) =>
+    searchParams.append("prompt_version_id", value),
+  )
+  filters.categories?.forEach((value) => searchParams.append("category", value))
+  if (filters.includeUncategorized) searchParams.set("uncategorized", "true")
+  if (filters.outcome) searchParams.set("outcome", filters.outcome)
+  if (filters.caseType) searchParams.set("case_type", filters.caseType)
+  return searchParams
+}
+
+function ResultFiltersPanel({
+  options,
+  filters,
+  onChange,
+  matchingCount,
+  totalCount,
+}: {
+  options: EvaluationResultFilterOptions | null
+  filters: EvaluationResultFilters
+  onChange: (filters: EvaluationResultFilters) => void
+  matchingCount: number
+  totalCount: number
+}) {
+  const hasFilters = Boolean(
+    filters.modelIds?.length ||
+      filters.promptVersionIds?.length ||
+      filters.categories?.length ||
+      filters.includeUncategorized ||
+      filters.outcome ||
+      filters.caseType,
+  )
+  const selectedCategories = [
+    ...(filters.categories ?? []),
+    ...(filters.includeUncategorized ? [""] : []),
+  ]
+
+  return (
+    <Card className="shadow-sm">
+      <CardContent className="space-y-4 pt-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="font-medium">Filter results</h3>
+            <p className="text-sm text-muted-foreground">
+              Showing {matchingCount} of {totalCount} results.
+            </p>
+          </div>
+          {hasFilters && (
+            <Button
+              type="button"
+              className="border bg-background text-foreground hover:bg-muted"
+              onClick={() => onChange({})}
+            >
+              Clear filters
+            </Button>
+          )}
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <FilterMultiSelect
+            label="Models"
+            value={filters.modelIds ?? []}
+            options={options?.models.map((model) => ({
+              value: model.id,
+              label: model.name,
+            })) ?? []}
+            onChange={(modelIds) => onChange({ ...filters, modelIds })}
+          />
+          <FilterMultiSelect
+            label="Prompt versions"
+            value={filters.promptVersionIds ?? []}
+            options={options?.prompt_versions.map((prompt) => ({
+              value: prompt.id,
+              label: `${prompt.name} · v${prompt.version_number}`,
+            })) ?? []}
+            onChange={(promptVersionIds) => onChange({ ...filters, promptVersionIds })}
+          />
+          <FilterMultiSelect
+            label="Test categories"
+            value={selectedCategories}
+            options={[
+              ...(options?.categories.map((category) => ({
+                value: category,
+                label: category,
+              })) ?? []),
+              ...(options?.has_uncategorized_category
+                ? [{ value: "", label: "Uncategorized / not recorded" }]
+                : []),
+            ]}
+            onChange={(values) =>
+              onChange({
+                ...filters,
+                categories: values.filter((value) => value !== ""),
+                includeUncategorized: values.includes(""),
+              })
+            }
+          />
+          <label className="space-y-1.5 text-sm font-medium">
+            Outcome
+            <Select
+              aria-label="Outcome"
+              value={filters.outcome ?? ""}
+              onChange={(event) =>
+                onChange({
+                  ...filters,
+                  outcome:
+                    event.target.value === "" ? undefined : (event.target.value as NonNullable<EvaluationResultFilters["outcome"]>),
+                })
+              }
+            >
+              <option value="">All outcomes</option>
+              <option value="passed">Passed</option>
+              <option value="failed">Failed</option>
+              <option value="unavailable">Unavailable</option>
+            </Select>
+          </label>
+          <label className="space-y-1.5 text-sm font-medium">
+            Test type
+            <Select
+              aria-label="Test type"
+              value={filters.caseType ?? ""}
+              onChange={(event) =>
+                onChange({
+                  ...filters,
+                  caseType:
+                    event.target.value === "" ? undefined : (event.target.value as NonNullable<EvaluationResultFilters["caseType"]>),
+                })
+              }
+            >
+              <option value="">All test types</option>
+              <option value="standard">Normal tests</option>
+              <option value="security">Security tests</option>
+            </Select>
+          </label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Normal-test outcomes use normalized contains-match. Security-test outcomes use the stored security assessment.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function FilterMultiSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: string[]
+  options: { value: string; label: string }[]
+  onChange: (values: string[]) => void
+}) {
+  return (
+    <label className="space-y-1.5 text-sm font-medium">
+      {label}
+      <Select
+        aria-label={label}
+        className="h-28"
+        multiple
+        value={value}
+        onChange={(event) =>
+          onChange(Array.from(event.currentTarget.selectedOptions, (option) => option.value))
+        }
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+    </label>
   )
 }
 
@@ -401,6 +620,15 @@ function ResultCard({ result }: { result: EvaluationResult }) {
                 )}
               </div>
             )}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {result.case_type === "standard" && (
+                <Badge variant="outline">Normal test</Badge>
+              )}
+              {result.test_category && (
+                <Badge variant="outline">{result.test_category}</Badge>
+              )}
+              <Badge variant="outline">{resultOutcomeLabel(result)}</Badge>
+            </div>
           </div>
           <ResultStatus status={result.status} />
         </div>
@@ -500,6 +728,20 @@ function ResultCard({ result }: { result: EvaluationResult }) {
       </CardContent>
     </Card>
   )
+}
+
+function resultOutcomeLabel(result: EvaluationResult): string {
+  if (result.case_type === "security") {
+    return result.security_status
+      ? result.security_status[0].toUpperCase() + result.security_status.slice(1)
+      : "Unavailable"
+  }
+  const containsMatch = result.quality_scores.find(
+    (score) => score.method === "normalized_contains_match" && score.version === 1,
+  )
+  if (containsMatch?.score === 1) return "Passed"
+  if (containsMatch?.score === 0) return "Failed"
+  return "Unavailable"
 }
 
 function ResultStatus({ status }: { status: EvaluationResult["status"] }) {
