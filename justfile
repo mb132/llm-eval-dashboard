@@ -10,8 +10,10 @@ setup:
     npm --prefix frontend ci
     just db-upgrade
 
-# Start the backend and frontend development servers.
-dev: db-upgrade
+# Build the frontend, then start the backend and frontend development servers.
+# This keeps the FastAPI-served fallback at http://localhost:8000 current while
+# Vite remains available with hot reload at http://localhost:5173.
+dev: db-upgrade build
     just _dev-services
 
 # Start only the FastAPI development server on port 8000.
