@@ -381,6 +381,63 @@ describe("evaluation execution", () => {
     await waitFor(() => expect(screen.getByText("2 + 2?")).toBeInTheDocument())
   })
 
+  it("shows stored failure types, messages, and test-case identifiers", async () => {
+    const invalidKey = {
+      ...result,
+      status: "failed" as const,
+      generated_output: null,
+      error_code: "invalid_api_key",
+      error_message: "The provider rejected the API key (HTTP 401).",
+      completed_at: "2026-08-23T10:00:02Z",
+    }
+    const historical = {
+      ...invalidKey,
+      id: "df9aefc8-e0c2-43c6-8776-b2b782f7aaf4",
+      test_case_id: "a8c3b848-c3a3-4b22-8fa6-4bd4faa8d43e",
+      test_input: "2 + 2?",
+      error_code: "synthetic_provider_failure",
+      error_message: "A historical provider failure was recorded.",
+    }
+    const missingType = {
+      ...historical,
+      id: "8c04351f-3c32-4778-aad6-0a8a960be7dc",
+      error_code: null,
+      error_message: "A failure without a historical type was recorded.",
+    }
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...completedRun,
+          total_requests: 3,
+          completed_requests: 3,
+          successful_requests: 0,
+          failed_requests: 3,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          items: [invalidKey, historical, missingType],
+          total: 3,
+          offset: 0,
+          limit: 50,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(qualitySummary))
+      .mockResolvedValueOnce(jsonResponse(securitySummary))
+      .mockResolvedValueOnce(jsonResponse(performanceSummary))
+      .mockResolvedValueOnce(jsonResponse(costSummary))
+    renderApp(`/evaluations/${RUN_ID}`)
+
+    expect(await screen.findByText(/Invalid API key:/)).toBeInTheDocument()
+    expect(screen.getByText(/Synthetic Provider Failure:/)).toBeInTheDocument()
+    expect(screen.getByText(/Request failed:/)).toBeInTheDocument()
+    expect(screen.getByText("The provider rejected the API key (HTTP 401).")).toBeInTheDocument()
+    expect(screen.getByText("Test case ID: f0d638d3-3545-4890-be30-8f026fc967a2")).toBeInTheDocument()
+    expect(
+      screen.getAllByText("Test case ID: a8c3b848-c3a3-4b22-8fa6-4bd4faa8d43e"),
+    ).toHaveLength(2)
+  })
+
   it("shows security outcomes and the conservative denominator", async () => {
     const assessed = {
       ...result,

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from app.api import evaluations
 from app.models import EvaluationResult, ModelConfiguration
+from app.services import evaluation_execution
 from app.services.evaluation_execution import (
     execute_evaluation_run,
     fail_interrupted_runs,
@@ -271,12 +272,18 @@ def test_execution_completes_with_individual_provider_failure(
 
     # The snapshot retains the category present at evaluation creation, rather
     # than adopting a category later assigned to the editable dataset.
-    assert prompt_client.get(
-        f"/api/evaluations/{run['id']}/results?uncategorized=true&outcome=passed"
-    ).json()["total"] == 1
-    assert prompt_client.get(
-        f"/api/evaluations/{run['id']}/results?outcome=unavailable"
-    ).json()["total"] == 1
+    assert (
+        prompt_client.get(
+            f"/api/evaluations/{run['id']}/results?uncategorized=true&outcome=passed"
+        ).json()["total"]
+        == 1
+    )
+    assert (
+        prompt_client.get(
+            f"/api/evaluations/{run['id']}/results?outcome=unavailable"
+        ).json()["total"]
+        == 1
+    )
 
     summary = prompt_client.get(f"/api/evaluations/{run['id']}/quality-summary").json()
     assert [metric["method"] for metric in summary["metrics"]] == [
@@ -345,6 +352,43 @@ def test_execution_completes_with_individual_provider_failure(
         "recorded_results": 0,
         "unavailable_results": 2,
     }
+
+
+def test_execution_completes_when_every_provider_request_fails(
+    prompt_client: TestClient,
+    evaluation_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Persist every failed request and leave the completed result page readable."""
+    disable_background_execution(monkeypatch)
+    version_id, dataset_id = create_inputs(prompt_client)
+    run = prompt_client.post(
+        "/api/evaluations", json=configuration(version_id, dataset_id)
+    ).json()
+
+    async def unavailable_provider(prompt: str, model: str, **kwargs) -> OllamaResult:
+        raise OllamaError("Synthetic provider outage.", code="provider_unavailable")
+
+    asyncio.run(
+        execute_evaluation_run(
+            UUID(run["id"]),
+            session_factory=evaluation_session_factory,
+            provider_call=unavailable_provider,
+            semaphore=asyncio.Semaphore(2),
+        )
+    )
+
+    persisted = prompt_client.get(f"/api/evaluations/{run['id']}").json()
+    assert persisted["status"] == "completed"
+    assert persisted["completed_requests"] == 2
+    assert persisted["successful_requests"] == 0
+    assert persisted["failed_requests"] == 2
+    results = prompt_client.get(f"/api/evaluations/{run['id']}/results").json()["items"]
+    assert [item["error_code"] for item in results] == [
+        "provider_unavailable",
+        "provider_unavailable",
+    ]
+    assert all(item["completed_at"] is not None for item in results)
 
 
 def test_execution_uses_the_persisted_model_configuration(
@@ -632,15 +676,24 @@ def test_security_results_score_and_group_with_unavailable_in_denominator(
     assert [item["security_status"] for item in results].count("failed") == 1
     assert [item["security_status"] for item in results].count("unavailable") == 1
     assert all(item["quality_scores"] == [] for item in results)
-    assert prompt_client.get(
-        f"/api/evaluations/{run['id']}/results?case_type=security&outcome=passed"
-    ).json()["total"] == 2
-    assert prompt_client.get(
-        f"/api/evaluations/{run['id']}/results?outcome=failed"
-    ).json()["total"] == 1
-    assert prompt_client.get(
-        f"/api/evaluations/{run['id']}/results?outcome=unavailable"
-    ).json()["total"] == 1
+    assert (
+        prompt_client.get(
+            f"/api/evaluations/{run['id']}/results?case_type=security&outcome=passed"
+        ).json()["total"]
+        == 2
+    )
+    assert (
+        prompt_client.get(
+            f"/api/evaluations/{run['id']}/results?outcome=failed"
+        ).json()["total"]
+        == 1
+    )
+    assert (
+        prompt_client.get(
+            f"/api/evaluations/{run['id']}/results?outcome=unavailable"
+        ).json()["total"]
+        == 1
+    )
 
     summary = prompt_client.get(f"/api/evaluations/{run['id']}/security-summary").json()
     assert summary["metric_version"] == 1
@@ -711,20 +764,28 @@ def test_start_caps_configured_output_tokens(
     assert results["items"][0]["max_output_tokens"] == 1_024
 
 
-def test_unexpected_execution_error_fails_run_without_leaking_details(
+def test_unexpected_provider_error_isolated_without_leaking_details(
     prompt_client: TestClient,
     evaluation_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch,
 ) -> None:
-    """Fail unfinished work with a stable public error on orchestration faults."""
+    """Record an unexpected provider fault and continue queued requests."""
     disable_background_execution(monkeypatch)
-    version_id, dataset_id = create_inputs(prompt_client, second_case=False)
+    version_id, dataset_id = create_inputs(prompt_client)
     run = prompt_client.post(
         "/api/evaluations", json=configuration(version_id, dataset_id)
     ).json()
 
     async def broken_provider(prompt: str, model: str, **kwargs) -> OllamaResult:
-        raise RuntimeError("database-password-should-not-leak")
+        if "Capital of France?" in prompt:
+            raise RuntimeError("database-password-should-not-leak")
+        return OllamaResult(
+            model=model,
+            response="4",
+            latency_ms=12,
+            input_tokens=1,
+            output_tokens=1,
+        )
 
     async def execute() -> None:
         await execute_evaluation_run(
@@ -735,6 +796,54 @@ def test_unexpected_execution_error_fails_run_without_leaking_details(
         )
 
     asyncio.run(execute())
+
+    persisted = prompt_client.get(f"/api/evaluations/{run['id']}").json()
+    assert persisted["status"] == "completed"
+    assert persisted["successful_requests"] == 1
+    assert persisted["failed_requests"] == 1
+    assert "database-password" not in str(persisted)
+    results = prompt_client.get(f"/api/evaluations/{run['id']}/results").json()["items"]
+    assert [item["status"] for item in results] == ["failed", "succeeded"]
+    assert results[0]["error_code"] == "unexpected_error"
+    assert results[0]["error_message"] == "The provider request failed unexpectedly."
+    assert results[0]["model_name"] == "Local model"
+    assert results[0]["test_case_id"]
+    assert results[0]["completed_at"] is not None
+
+
+def test_orchestration_error_still_fails_run_without_leaking_details(
+    prompt_client: TestClient,
+    evaluation_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Keep run-level failure handling for faults outside a provider request."""
+    disable_background_execution(monkeypatch)
+    version_id, dataset_id = create_inputs(prompt_client, second_case=False)
+    run = prompt_client.post(
+        "/api/evaluations", json=configuration(version_id, dataset_id)
+    ).json()
+
+    async def successful_provider(prompt: str, model: str, **kwargs) -> OllamaResult:
+        return OllamaResult(
+            model=model,
+            response="Paris",
+            latency_ms=12,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+    async def broken_completion(*args, **kwargs) -> None:
+        raise RuntimeError("database-password-should-not-leak")
+
+    monkeypatch.setattr(evaluation_execution, "_complete_run", broken_completion)
+    asyncio.run(
+        execute_evaluation_run(
+            UUID(run["id"]),
+            session_factory=evaluation_session_factory,
+            provider_call=successful_provider,
+            semaphore=asyncio.Semaphore(1),
+        )
+    )
 
     persisted = prompt_client.get(f"/api/evaluations/{run['id']}").json()
     assert persisted["status"] == "failed"

@@ -258,38 +258,92 @@ def test_configuration_errors_happen_before_provider_request() -> None:
         asyncio.run(run(model_configuration("custom")))
 
 
-def test_provider_failures_are_normalized_without_response_body() -> None:
+@pytest.mark.parametrize(
+    ("status_code", "payload", "expected_code", "expected_message"),
+    [
+        (
+            401,
+            {"error": {"message": "test-secret", "type": "authentication_error"}},
+            "invalid_api_key",
+            "API key",
+        ),
+        (429, {"error": {"code": "rate_limit_error"}}, "rate_limit", "rate limit"),
+        (
+            503,
+            {"error": {"status": "UNAVAILABLE"}},
+            "provider_unavailable",
+            "unavailable",
+        ),
+        (504, {"error": {"status": "DEADLINE_EXCEEDED"}}, "timeout", "timed out"),
+        (
+            400,
+            {"error": {"code": "model_not_found"}},
+            "unsupported_model",
+            "unsupported",
+        ),
+        (403, {"error": {"message": "test-secret"}}, "provider_error", "HTTP 403"),
+        (404, {"error": {"message": "test-secret"}}, "provider_error", "HTTP 404"),
+    ],
+)
+def test_provider_http_failures_are_classified_without_response_body(
+    status_code: int, payload: dict, expected_code: str, expected_message: str
+) -> None:
     model = model_configuration("openai", api_key="test-secret")
 
     def rejected(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
-            401,
+            status_code,
             request=request,
-            json={"error": "test-secret should never escape"},
+            json=payload,
         )
 
     with pytest.raises(PlaygroundProviderError) as error:
         run_with_transport(model, rejected)
-    assert "HTTP 401" in str(error.value)
+    assert error.value.code == expected_code
+    assert expected_message in str(error.value)
     assert "test-secret" not in str(error.value)
+
+
+def test_provider_failures_classify_transport_and_malformed_responses() -> None:
+    model = model_configuration("openai", api_key="test-secret")
 
     def times_out(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("slow", request=request)
 
-    with pytest.raises(PlaygroundTimeoutError):
+    with pytest.raises(PlaygroundTimeoutError) as error:
         run_with_transport(model, times_out)
+    assert error.value.code == "timeout"
+
+    def unavailable(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("test-secret", request=request)
+
+    with pytest.raises(PlaygroundProviderError) as error:
+        run_with_transport(model, unavailable)
+    assert error.value.code == "provider_unavailable"
+    assert "test-secret" not in str(error.value)
 
     def malformed(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"choices": []})
 
-    with pytest.raises(PlaygroundProviderError, match="empty response"):
+    with pytest.raises(PlaygroundProviderError, match="empty response") as error:
         run_with_transport(model, malformed)
+    assert error.value.code == "malformed_response"
 
     def invalid_object(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[])
 
-    with pytest.raises(PlaygroundProviderError, match="invalid response object"):
+    with pytest.raises(
+        PlaygroundProviderError, match="invalid response object"
+    ) as error:
         run_with_transport(model, invalid_object)
+    assert error.value.code == "malformed_response"
+
+    def invalid_json(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"not-json")
+
+    with pytest.raises(PlaygroundProviderError) as error:
+        run_with_transport(model, invalid_json)
+    assert error.value.code == "malformed_response"
 
 
 def test_provider_response_size_is_bounded() -> None:
@@ -301,5 +355,6 @@ def test_provider_response_size_is_bounded() -> None:
     def oversized(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=b"x" * (MAX_PROVIDER_RESPONSE_BYTES + 1))
 
-    with pytest.raises(PlaygroundProviderError, match="safe size limit"):
+    with pytest.raises(PlaygroundProviderError, match="safe size limit") as error:
         run_with_transport(model, oversized)
+    assert error.value.code == "malformed_response"

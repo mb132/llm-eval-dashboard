@@ -721,9 +721,9 @@ async def _execute_result(
     client: httpx.AsyncClient,
     semaphore: asyncio.Semaphore,
 ) -> None:
-    try:
-        async with semaphore:
-            await _mark_result_running(session_factory, snapshot.result_id)
+    async with semaphore:
+        await _mark_result_running(session_factory, snapshot.result_id)
+        try:
             if snapshot.configuration is None:
                 raise PlaygroundConfigurationError(
                     "The selected provider configuration is no longer available."
@@ -754,39 +754,28 @@ async def _execute_result(
                 outcome = await provider_call(
                     snapshot.prompt, snapshot.model, client=client
                 )
-    except OllamaError as exc:
+        except OllamaError as exc:
+            error_code, error_message = exc.code, str(exc)
+        except PlaygroundConfigurationError as exc:
+            error_code, error_message = "configuration_error", str(exc)
+        except PlaygroundTimeoutError as exc:
+            error_code, error_message = "timeout", str(exc)
+        except PlaygroundProviderError as exc:
+            error_code, error_message = exc.code, str(exc)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            error_code = "unexpected_error"
+            error_message = "The provider request failed unexpectedly."
+        else:
+            await _store_result_success(session_factory, snapshot.result_id, outcome)
+            return
         await _store_result_failure(
             session_factory,
             snapshot.result_id,
-            error_code=exc.code,
-            error_message=str(exc),
+            error_code=error_code,
+            error_message=error_message,
         )
-        return
-    except PlaygroundConfigurationError as exc:
-        await _store_result_failure(
-            session_factory,
-            snapshot.result_id,
-            error_code="configuration_error",
-            error_message=str(exc),
-        )
-        return
-    except PlaygroundTimeoutError as exc:
-        await _store_result_failure(
-            session_factory,
-            snapshot.result_id,
-            error_code="timeout",
-            error_message=str(exc),
-        )
-        return
-    except PlaygroundProviderError as exc:
-        await _store_result_failure(
-            session_factory,
-            snapshot.result_id,
-            error_code="provider_error",
-            error_message=str(exc),
-        )
-        return
-    await _store_result_success(session_factory, snapshot.result_id, outcome)
 
 
 async def _mark_result_running(

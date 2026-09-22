@@ -80,8 +80,12 @@ protocols. Evaluations support selecting and comparing multiple model IDs.
 After reviewing a configuration, start the evaluation from the same page. The
 server persists its inputs first, processes up to four model requests in the
 background, and opens a progress page that can be refreshed safely. Individual
-request failures remain visible without stopping the rest of the run. This is a
-local single-process worker. Each request stores the effective model
+request failures remain visible without stopping the rest of the run. Each
+request is attempted once and records a safe error type and message: provider
+unavailable, invalid API key, rate limit, timeout, malformed response,
+unsupported model, configuration error, provider error, or unexpected error.
+Failed results retain their model and test-case snapshots. This is a local
+single-process worker. Each request stores the effective model
 configuration before execution and limits generated output to at most 1,024
 tokens. Later model edits therefore do not rewrite a run. A server restart marks
 unfinished work as failed instead of replaying requests whose provider-side

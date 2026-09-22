@@ -654,7 +654,15 @@ function ResultCard({ result }: { result: EvaluationResult }) {
           />
         )}
         {result.status === "failed" && (
-          <ErrorMessage message={result.error_message ?? "Model request failed."} />
+          <>
+            <ErrorMessage
+              errorCode={result.error_code}
+              message={result.error_message ?? "Model request failed."}
+            />
+            <p className="text-xs text-muted-foreground">
+              Test case ID: {result.test_case_id}
+            </p>
+          </>
         )}
         {result.status === "running" && (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -887,15 +895,47 @@ function formatAvailability(recorded: number, unavailable: number): string {
   return `${recorded} recorded · ${unavailable} unavailable`
 }
 
-function ErrorMessage({ message }: { message: string }) {
+function ErrorMessage({
+  message,
+  errorCode,
+}: {
+  message: string
+  errorCode?: string | null
+}) {
   return (
     <div
       className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
       role="alert"
     >
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
-      <p>{message}</p>
+      <p>
+        {errorCode !== undefined && (
+          <span className="font-medium">{errorTypeLabel(errorCode)}: </span>
+        )}
+        {message}
+      </p>
     </div>
+  )
+}
+
+function errorTypeLabel(errorCode: string | null): string {
+  const labels: Record<string, string> = {
+    provider_unavailable: "Provider unavailable",
+    invalid_api_key: "Invalid API key",
+    rate_limit: "Rate limit",
+    timeout: "Timeout",
+    malformed_response: "Malformed response",
+    unsupported_model: "Unsupported model",
+    configuration_error: "Configuration error",
+    provider_error: "Provider error",
+    unexpected_error: "Unexpected error",
+  }
+  if (errorCode === null) return "Request failed"
+  return (
+    labels[errorCode] ??
+    errorCode
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase())
   )
 }
 
