@@ -1,15 +1,25 @@
+# ruff: noqa: E501
 """REST API for dataset and test-case management."""
 
+import json
 from datetime import datetime
 from typing import Annotated, Literal, NoReturn, Self, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import Response as DownloadResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_session
 from ..models import Dataset, TestCase
+from ..services.data_export import dataset_export
+from ..services.dataset_import import (
+    MAX_IMPORT_BYTES,
+    ImportError as DatasetImportError,
+    commit as commit_import,
+    preview as preview_import,
+)
 from ..services.datasets import (
     MAX_CATEGORY_LENGTH,
     MAX_DESCRIPTION_LENGTH,
@@ -191,6 +201,95 @@ def _raise_http_error(exc: Exception) -> NoReturn:
     raise exc
 
 
+async def _import_form(
+    request: Request,
+) -> tuple[str, bytes, dict[str, object], str | None, UUID]:
+    """Read the bounded multipart contract without retaining uploaded data."""
+    try:
+        form = await request.form(max_files=1, max_fields=3, max_part_size=256 * 1024)
+        upload = form.get("file")
+        options_raw = form.get("options")
+        if (
+            upload is None
+            or not hasattr(upload, "read")
+            or not isinstance(options_raw, str)
+        ):
+            raise DatasetImportError("Provide a file and JSON import options.")
+        chunks: list[bytes] = []
+        total = 0
+        while chunk := await upload.read(64 * 1024):
+            total += len(chunk)
+            if total > MAX_IMPORT_BYTES:
+                raise HTTPException(
+                    status_code=413, detail="The import file must be 10 MiB or smaller."
+                )
+            chunks.append(chunk)
+        try:
+            options = json.loads(options_raw)
+        except json.JSONDecodeError as exc:
+            raise DatasetImportError("Import options must be valid JSON.") from exc
+        if not isinstance(options, dict):
+            raise DatasetImportError("Import options must be a JSON object.")
+        fingerprint = form.get("fingerprint")
+        import_id = form.get("import_id")
+        try:
+            parsed_import_id = UUID(str(import_id)) if import_id else uuid4()
+        except ValueError as exc:
+            raise DatasetImportError("Import ID must be a UUID.") from exc
+        return (
+            upload.filename or "upload",
+            b"".join(chunks),
+            options,
+            str(fingerprint) if fingerprint else None,
+            parsed_import_id,
+        )
+    except HTTPException:
+        raise
+    except DatasetImportError:
+        raise
+    except Exception as exc:
+        raise DatasetImportError("The upload could not be read.") from exc
+
+
+@router.post("/import/preview")
+async def preview_dataset_import(
+    request: Request, session: DatabaseSession
+) -> dict[str, object]:
+    try:
+        file_name, content, options, _, _ = await _import_form(request)
+        return await preview_import(
+            session, file_name=file_name, content=content, options=options
+        )
+    except DatasetNotFoundError as exc:
+        _raise_http_error(exc)
+    except DatasetImportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/import/commit", status_code=status.HTTP_201_CREATED)
+async def commit_dataset_import(
+    request: Request, session: DatabaseSession
+) -> dict[str, object]:
+    try:
+        file_name, content, options, fingerprint, import_id = await _import_form(
+            request
+        )
+        if not fingerprint:
+            raise DatasetImportError("Preview fingerprint is required.")
+        return await commit_import(
+            session,
+            file_name=file_name,
+            content=content,
+            options=options,
+            fingerprint=fingerprint,
+            import_id=import_id,
+        )
+    except (DatasetNotFoundError, DatasetConflictError) as exc:
+        _raise_http_error(exc)
+    except DatasetImportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get("", response_model=list[DatasetSummaryResponse])
 async def read_datasets(session: DatabaseSession) -> list[DatasetSummaryResponse]:
     """List all datasets ordered by most recent activity."""
@@ -237,6 +336,55 @@ async def read_dataset(
     except DatasetNotFoundError as exc:
         _raise_http_error(exc)
     return _detail_response(dataset)
+
+
+@router.get("/{dataset_id}/export")
+async def export_dataset(
+    dataset_id: UUID,
+    session: DatabaseSession,
+    format: Literal["csv", "json"] = "json",
+    category: Annotated[list[str], Query()] = [],
+    uncategorized: bool = False,
+    case_type: CaseType | None = None,
+    case_id: Annotated[list[UUID], Query()] = [],
+) -> DownloadResponse:
+    try:
+        dataset = await get_dataset(session, dataset_id)
+    except DatasetNotFoundError as exc:
+        _raise_http_error(exc)
+    cases = [
+        item
+        for item in dataset.test_cases
+        if (not category or item.category in category)
+        and (not uncategorized or item.category is None)
+        and (case_type is None or item.case_type == case_type)
+        and (not case_id or item.id in case_id)
+    ]
+    if not cases:
+        raise HTTPException(
+            status_code=422, detail="No test cases match the export filters."
+        )
+    filters = {
+        "category": category,
+        "uncategorized": uncategorized,
+        "case_type": case_type,
+        "case_id": [str(item) for item in case_id],
+    }
+    content, media_type = dataset_export(dataset, cases, filters, format)
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="This export is too large. Export a smaller selection.",
+        )
+    return DownloadResponse(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="dataset-{dataset.id}.{format}"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.patch("/{dataset_id}", response_model=DatasetDetailResponse)

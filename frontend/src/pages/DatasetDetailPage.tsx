@@ -6,6 +6,8 @@ import {
   Plus,
   Save,
   Trash2,
+  Download,
+  FileUp,
 } from "lucide-react"
 import { useEffect, useState, type FormEvent } from "react"
 import { Link, useParams } from "react-router-dom"
@@ -32,6 +34,7 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { download } from "@/lib/download"
 
 export function DatasetDetailPage() {
   const { datasetId } = useParams()
@@ -187,6 +190,7 @@ export function DatasetDetailPage() {
         <Badge variant="outline">
           {dataset.test_cases.length} {dataset.test_cases.length === 1 ? "case" : "cases"}
         </Badge>
+        <div className="flex gap-2"><Link to={`/datasets/import?dataset=${datasetId}`} className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-muted"><FileUp className="size-4" />Import cases</Link><Button type="button" className="h-9 border bg-card px-3 text-foreground hover:bg-muted" onClick={() => void download(`/api/datasets/${datasetId}/export?format=json`, `${dataset.name}.json`)}><Download className="mr-1 size-4" />Export JSON</Button><Button type="button" className="h-9 border bg-card px-3 text-foreground hover:bg-muted" onClick={() => void download(`/api/datasets/${datasetId}/export?format=csv`, `${dataset.name}.csv`)}><Download className="mr-1 size-4" />CSV</Button></div>
       </header>
 
       {statusMessage && (

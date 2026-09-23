@@ -37,6 +37,7 @@ def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
     assert table_names(database_path) == {
         "alembic_version",
         "datasets",
+        "dataset_import_receipts",
         "evaluation_results",
         "evaluation_quality_scores",
         "evaluation_runs",

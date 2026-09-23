@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Evaluation configuration, execution, progress, and result endpoints."""
 
 from datetime import date, datetime
@@ -5,6 +6,7 @@ from typing import Annotated, Literal, NoReturn, Self
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -18,6 +20,7 @@ from ..services.costs import (
     PromptCostAggregate,
     get_cost_summary,
 )
+from ..services.data_export import result_export
 from ..services.evaluation_configuration import (
     MAX_REPETITIONS,
     MAX_SELECTED_MODELS,
@@ -1094,3 +1097,76 @@ async def read_evaluation_results(
     except EvaluationRunNotFoundError as exc:
         _raise_evaluation_error(exc)
     return _result_page_response(page)
+
+
+@router.get("/{evaluation_id}/export")
+async def export_evaluation_results(
+    evaluation_id: UUID,
+    session: DatabaseSession,
+    format: Literal["csv", "json"] = "json",
+    model_id: Annotated[list[str], Query()] = [],
+    prompt_version_id: Annotated[list[UUID], Query()] = [],
+    category: Annotated[list[str], Query()] = [],
+    uncategorized: bool = False,
+    outcome: Literal["passed", "failed", "unavailable"] | None = None,
+    case_type: Literal["standard", "security"] | None = None,
+) -> Response:
+    """Download every result matching the dashboard's current filter semantics."""
+    try:
+        run = await get_evaluation_run(session, evaluation_id)
+        if run.status not in {"completed", "failed"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Results can be exported after the evaluation finishes.",
+            )
+        filters = ResultFilters(
+            model_ids=tuple(model_id),
+            prompt_version_ids=tuple(prompt_version_id),
+            categories=tuple(category),
+            include_uncategorized_category=uncategorized,
+            outcome=outcome,
+            case_type=case_type,
+        )
+        first = await list_evaluation_results(
+            session,
+            evaluation_id,
+            offset=0,
+            limit=MAX_RESULT_PAGE_SIZE,
+            filters=filters,
+        )
+        items = list(first.items)
+        while len(items) < first.total:
+            page = await list_evaluation_results(
+                session,
+                evaluation_id,
+                offset=len(items),
+                limit=MAX_RESULT_PAGE_SIZE,
+                filters=filters,
+            )
+            items.extend(page.items)
+        rows = [_result_response(item).model_dump(mode="json") for item in items]
+    except EvaluationRunNotFoundError as exc:
+        _raise_evaluation_error(exc)
+    export_filters = {
+        "model_id": model_id,
+        "prompt_version_id": [str(item) for item in prompt_version_id],
+        "category": category,
+        "uncategorized": uncategorized,
+        "outcome": outcome,
+        "case_type": case_type,
+    }
+    content, media_type = result_export(run, rows, export_filters, format)
+    if len(content) > 100 * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail="This export is too large. Narrow the result filters.",
+        )
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="evaluation-{evaluation_id}.{format}"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

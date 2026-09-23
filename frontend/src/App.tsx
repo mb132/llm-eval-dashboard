@@ -10,6 +10,7 @@ import {
 import { NavLink, Route, Routes } from "react-router-dom"
 
 import { DatasetDetailPage } from "@/pages/DatasetDetailPage"
+import { DatasetImportPage } from "@/pages/DatasetImportPage"
 import { DatasetsPage } from "@/pages/DatasetsPage"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { EvaluationPage } from "@/pages/EvaluationPage"
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="prompts" element={<PromptsPage />} />
           <Route path="prompts/:promptId" element={<PromptDetailPage />} />
           <Route path="datasets" element={<DatasetsPage />} />
+          <Route path="datasets/import" element={<DatasetImportPage />} />
           <Route path="datasets/:datasetId" element={<DatasetDetailPage />} />
           <Route path="playground" element={<PlaygroundPage />} />
           <Route path="models" element={<ModelsPage />} />

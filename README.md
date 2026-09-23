@@ -144,9 +144,11 @@ input and expected answer and may include a category plus up to 20 flat metadata
 fields. A dataset always retains at least one test case and is limited to 500
 cases to bound later evaluation cost and resource use.
 
-JSON and CSV dataset import are intentionally deferred. A future import feature
-should reuse the same server-side validation and size limits rather than adding
-a separate ingestion path.
+Datasets can be imported from UTF-8 CSV or JSON through the **Import dataset**
+workflow. Preview maps columns, reports row errors, and explains duplicate
+actions before any data is written. Imports accept up to 1,000 rows and 10 MiB.
+Dataset and completed evaluation-result downloads support canonical JSON and
+spreadsheet-safe CSV; use JSON when a program needs exact typed metadata.
 
 ## Tests
 

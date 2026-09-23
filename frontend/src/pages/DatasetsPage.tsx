@@ -1,4 +1,4 @@
-import { AlertCircle, Database, LoaderCircle, Plus } from "lucide-react"
+import { AlertCircle, Database, FileUp, LoaderCircle, Plus } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
@@ -80,6 +80,7 @@ export function DatasetsPage() {
             Build traceable collections of inputs and expected answers for repeatable evaluations.
           </p>
         </div>
+        <Link to="/datasets/import" className="inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-muted"><FileUp className="size-4" />Import dataset</Link>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,0.9fr)]">

@@ -7,6 +7,7 @@ import {
   LoaderCircle,
   RefreshCw,
   XCircle,
+  Download,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
@@ -40,6 +41,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Select } from "@/components/ui/select"
+import { download } from "@/lib/download"
 
 const POLL_INTERVAL_MS = 1_500
 const RESULT_PAGE_SIZE = 50
@@ -256,6 +258,7 @@ export function EvaluationRunPage() {
             Raw outputs, execution metrics, and quality scores are shown together.
           </p>
         </div>
+        {!isActive && <div className="mt-3 flex gap-2"><Button type="button" className="h-9 border bg-card px-3 text-foreground hover:bg-muted" onClick={() => void download(`/api/evaluations/${evaluationId}/export?${searchParams.toString()}&format=json`, "evaluation-results.json")}><Download className="mr-1 size-4" />Export JSON</Button><Button type="button" className="h-9 border bg-card px-3 text-foreground hover:bg-muted" onClick={() => void download(`/api/evaluations/${evaluationId}/export?${searchParams.toString()}&format=csv`, "evaluation-results.csv")}><Download className="mr-1 size-4" />CSV</Button></div>}
         <ResultFiltersPanel
           options={filterOptions}
           filters={filters}
