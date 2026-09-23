@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>LLM Evaluation Platform</title>
+  <rect width="64" height="64" rx="16" fill="#111827" />
+  <path d="M22 15h20M27 15v10l-8.5 22.1A4.2 4.2 0 0 0 22.4 53h19.2a4.2 4.2 0 0 0 3.9-5.9L37 25V15" fill="none" stroke="#f9fafb" stroke-linecap="round" stroke-linejoin="round" stroke-width="4" />
+  <path d="M22.5 39h19M28 34l4-4 4 3 5-7" fill="none" stroke="#67e8f9" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" />
+</svg>
