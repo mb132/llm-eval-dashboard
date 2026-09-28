@@ -37,6 +37,7 @@ def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
     assert table_names(database_path) == {
         "alembic_version",
         "datasets",
+        "dataset_import_receipts",
         "evaluation_results",
         "evaluation_quality_scores",
         "evaluation_runs",
@@ -59,6 +60,7 @@ def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
         "security_test_type",
         "security_metric_version",
         "security_passed",
+        "test_category",
     } <= column_names(database_path, "evaluation_results")
     assert {"case_type", "security_test_type"} <= column_names(
         database_path, "test_cases"

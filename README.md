@@ -80,8 +80,12 @@ protocols. Evaluations support selecting and comparing multiple model IDs.
 After reviewing a configuration, start the evaluation from the same page. The
 server persists its inputs first, processes up to four model requests in the
 background, and opens a progress page that can be refreshed safely. Individual
-request failures remain visible without stopping the rest of the run. This is a
-local single-process worker. Each request stores the effective model
+request failures remain visible without stopping the rest of the run. Each
+request is attempted once and records a safe error type and message: provider
+unavailable, invalid API key, rate limit, timeout, malformed response,
+unsupported model, configuration error, provider error, or unexpected error.
+Failed results retain their model and test-case snapshots. This is a local
+single-process worker. Each request stores the effective model
 configuration before execution and limits generated output to at most 1,024
 tokens. Later model edits therefore do not rewrite a run. A server restart marks
 unfinished work as failed instead of replaying requests whose provider-side
@@ -99,6 +103,12 @@ input/output price overrides. Each request snapshots its pricing basis and shows
 estimated request, evaluation, test-case, and per-model costs. Unknown pricing or
 missing token usage remains unavailable; estimates exclude caching, discounts,
 taxes, tools, and provider billing adjustments.
+
+Individual results can be filtered within a run by model, prompt version, test
+category, outcome, and normal or security test type. Normal outcomes use the
+normalized contains-match score; security outcomes use the stored security
+assessment. Categories are snapshotted when a run starts, so older runs without
+a saved category appear as “Uncategorized / not recorded”.
 
 Security test cases support direct prompt injection, instruction override, and
 system-prompt extraction attempts. Their expected-answer field is a synthetic
@@ -134,9 +144,11 @@ input and expected answer and may include a category plus up to 20 flat metadata
 fields. A dataset always retains at least one test case and is limited to 500
 cases to bound later evaluation cost and resource use.
 
-JSON and CSV dataset import are intentionally deferred. A future import feature
-should reuse the same server-side validation and size limits rather than adding
-a separate ingestion path.
+Datasets can be imported from UTF-8 CSV or JSON through the **Import dataset**
+workflow. Preview maps columns, reports row errors, and explains duplicate
+actions before any data is written. Imports accept up to 1,000 rows and 10 MiB.
+Dataset and completed evaluation-result downloads support canonical JSON and
+spreadsheet-safe CSV; use JSON when a program needs exact typed metadata.
 
 ## Tests
 

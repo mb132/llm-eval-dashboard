@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import case, func, select, update
+from sqlalchemy import and_, case, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -44,7 +44,7 @@ from .playground import (
 )
 from .pricing import calculate_cost_nano_usd
 from .prompts import INPUT_PLACEHOLDER
-from .quality import QUALITY_METRICS, score_response
+from .quality import CONTAINS_MATCH, QUALITY_METRICS, score_response
 from .security import SECURITY_METRIC_VERSION, score_security_response
 
 MAX_CONCURRENT_MODEL_REQUESTS = 4
@@ -77,8 +77,32 @@ class ResultPage:
 
     items: list[EvaluationResult]
     total: int
+    unfiltered_total: int
     offset: int
     limit: int
+    filter_options: "ResultFilterOptions"
+
+
+@dataclass(frozen=True, slots=True)
+class ResultFilterOptions:
+    """Immutable result dimensions available for one evaluation run."""
+
+    models: list["RunModelSnapshot"]
+    prompt_versions: list["RunPromptSnapshot"]
+    categories: list[str]
+    has_uncategorized_category: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ResultFilters:
+    """Optional predicates used to inspect one evaluation run."""
+
+    model_ids: tuple[str, ...] = ()
+    prompt_version_ids: tuple[UUID, ...] = ()
+    categories: tuple[str, ...] = ()
+    include_uncategorized_category: bool = False
+    outcome: str | None = None
+    case_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,6 +318,7 @@ async def create_evaluation_run(
                         prompt_name=prompt_name,
                         prompt_version_number=version.version_number,
                         test_case_id=test_case.id,
+                        test_category=test_case.category,
                         case_type=test_case.case_type,
                         security_test_type=test_case.security_test_type,
                         security_metric_version=(
@@ -435,29 +460,148 @@ async def list_evaluation_results(
     *,
     offset: int,
     limit: int,
+    filters: ResultFilters | None = None,
 ) -> ResultPage:
     """Return one bounded page of result snapshots in execution order."""
     if await session.get(EvaluationRun, evaluation_id) is None:
         raise EvaluationRunNotFoundError("Evaluation not found.")
-    total = await session.scalar(
+    base_conditions = [EvaluationResult.evaluation_id == evaluation_id]
+    unfiltered_total = await session.scalar(
         select(func.count(EvaluationResult.id)).where(
-            EvaluationResult.evaluation_id == evaluation_id
+            *base_conditions
         )
+    )
+    conditions = [*base_conditions]
+    filters = filters or ResultFilters()
+    if filters.model_ids:
+        conditions.append(EvaluationResult.model_id.in_(filters.model_ids))
+    if filters.prompt_version_ids:
+        conditions.append(
+            EvaluationResult.prompt_version_id.in_(filters.prompt_version_ids)
+        )
+    category_conditions = []
+    if filters.categories:
+        category_conditions.append(EvaluationResult.test_category.in_(filters.categories))
+    if filters.include_uncategorized_category:
+        category_conditions.append(EvaluationResult.test_category.is_(None))
+    if category_conditions:
+        conditions.append(or_(*category_conditions))
+    if filters.case_type is not None:
+        conditions.append(EvaluationResult.case_type == filters.case_type)
+    if filters.outcome is not None:
+        score_conditions = (
+            EvaluationQualityScore.result_id == EvaluationResult.id,
+            EvaluationQualityScore.method == CONTAINS_MATCH.method,
+            EvaluationQualityScore.metric_version == CONTAINS_MATCH.version,
+        )
+        normal_passed = exists(
+            select(EvaluationQualityScore.id).where(
+                *score_conditions, EvaluationQualityScore.score == 1
+            )
+        )
+        normal_failed = exists(
+            select(EvaluationQualityScore.id).where(
+                *score_conditions, EvaluationQualityScore.score == 0
+            )
+        )
+        normal_scored = exists(
+            select(EvaluationQualityScore.id).where(
+                *score_conditions, EvaluationQualityScore.score.is_not(None)
+            )
+        )
+        if filters.outcome == "passed":
+            conditions.append(
+                or_(
+                    and_(EvaluationResult.case_type == "standard", normal_passed),
+                    and_(
+                        EvaluationResult.case_type == "security",
+                        EvaluationResult.security_passed.is_(True),
+                    ),
+                )
+            )
+        elif filters.outcome == "failed":
+            conditions.append(
+                or_(
+                    and_(EvaluationResult.case_type == "standard", normal_failed),
+                    and_(
+                        EvaluationResult.case_type == "security",
+                        EvaluationResult.security_passed.is_(False),
+                    ),
+                )
+            )
+        else:
+            conditions.append(
+                or_(
+                    and_(EvaluationResult.case_type == "standard", ~normal_scored),
+                    and_(
+                        EvaluationResult.case_type == "security",
+                        EvaluationResult.security_passed.is_(None),
+                    ),
+                )
+            )
+    total = await session.scalar(
+        select(func.count(EvaluationResult.id)).where(*conditions)
     )
     statement = (
         select(EvaluationResult)
-        .where(EvaluationResult.evaluation_id == evaluation_id)
+        .where(*conditions)
         .order_by(EvaluationResult.sequence_number)
         .options(selectinload(EvaluationResult.quality_scores))
         .offset(offset)
         .limit(limit)
     )
     items = list(await session.scalars(statement))
+    model_rows = await session.execute(
+        select(EvaluationResult.model_id, EvaluationResult.model_name)
+        .where(*base_conditions)
+        .distinct()
+        .order_by(EvaluationResult.model_name, EvaluationResult.model_id)
+    )
+    prompt_rows = await session.execute(
+        select(
+            EvaluationResult.prompt_version_id,
+            EvaluationResult.prompt_name,
+            EvaluationResult.prompt_version_number,
+        )
+        .where(*base_conditions)
+        .distinct()
+        .order_by(
+            EvaluationResult.prompt_name,
+            EvaluationResult.prompt_version_number,
+            EvaluationResult.prompt_version_id,
+        )
+    )
+    category_rows = list(
+        await session.scalars(
+            select(EvaluationResult.test_category)
+            .where(*base_conditions, EvaluationResult.test_category.is_not(None))
+            .distinct()
+            .order_by(EvaluationResult.test_category)
+        )
+    )
+    categories = [category for category in category_rows if category is not None]
+    has_uncategorized_category = bool(
+        await session.scalar(
+            select(func.count(EvaluationResult.id)).where(
+                *base_conditions, EvaluationResult.test_category.is_(None)
+            )
+        )
+    )
     return ResultPage(
         items=items,
         total=total or 0,
+        unfiltered_total=unfiltered_total or 0,
         offset=offset,
         limit=limit,
+        filter_options=ResultFilterOptions(
+            models=[RunModelSnapshot(id=row[0], name=row[1]) for row in model_rows],
+            prompt_versions=[
+                RunPromptSnapshot(id=row[0], name=row[1], version_number=row[2])
+                for row in prompt_rows
+            ],
+            categories=categories,
+            has_uncategorized_category=has_uncategorized_category,
+        ),
     )
 
 
@@ -577,9 +721,9 @@ async def _execute_result(
     client: httpx.AsyncClient,
     semaphore: asyncio.Semaphore,
 ) -> None:
-    try:
-        async with semaphore:
-            await _mark_result_running(session_factory, snapshot.result_id)
+    async with semaphore:
+        await _mark_result_running(session_factory, snapshot.result_id)
+        try:
             if snapshot.configuration is None:
                 raise PlaygroundConfigurationError(
                     "The selected provider configuration is no longer available."
@@ -610,39 +754,28 @@ async def _execute_result(
                 outcome = await provider_call(
                     snapshot.prompt, snapshot.model, client=client
                 )
-    except OllamaError as exc:
+        except OllamaError as exc:
+            error_code, error_message = exc.code, str(exc)
+        except PlaygroundConfigurationError as exc:
+            error_code, error_message = "configuration_error", str(exc)
+        except PlaygroundTimeoutError as exc:
+            error_code, error_message = "timeout", str(exc)
+        except PlaygroundProviderError as exc:
+            error_code, error_message = exc.code, str(exc)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            error_code = "unexpected_error"
+            error_message = "The provider request failed unexpectedly."
+        else:
+            await _store_result_success(session_factory, snapshot.result_id, outcome)
+            return
         await _store_result_failure(
             session_factory,
             snapshot.result_id,
-            error_code=exc.code,
-            error_message=str(exc),
+            error_code=error_code,
+            error_message=error_message,
         )
-        return
-    except PlaygroundConfigurationError as exc:
-        await _store_result_failure(
-            session_factory,
-            snapshot.result_id,
-            error_code="configuration_error",
-            error_message=str(exc),
-        )
-        return
-    except PlaygroundTimeoutError as exc:
-        await _store_result_failure(
-            session_factory,
-            snapshot.result_id,
-            error_code="timeout",
-            error_message=str(exc),
-        )
-        return
-    except PlaygroundProviderError as exc:
-        await _store_result_failure(
-            session_factory,
-            snapshot.result_id,
-            error_code="provider_error",
-            error_message=str(exc),
-        )
-        return
-    await _store_result_success(session_factory, snapshot.result_id, outcome)
 
 
 async def _mark_result_running(

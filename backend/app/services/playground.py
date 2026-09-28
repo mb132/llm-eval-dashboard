@@ -30,9 +30,15 @@ class PlaygroundConfigurationError(RuntimeError):
 class PlaygroundProviderError(RuntimeError):
     """Raised when a provider fails or returns an unusable response."""
 
+    def __init__(self, message: str, *, code: str = "provider_error") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 class PlaygroundTimeoutError(RuntimeError):
     """Raised when a provider does not finish before the request timeout."""
+
+    code = "timeout"
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,22 +87,24 @@ async def generate_prompt(
             system_prompt,
             max_output_tokens=max_output_tokens,
         )
+        normalized = _normalize_response(provider, data)
+    except PlaygroundProviderError:
+        raise
     except httpx.TimeoutException as exc:
         raise PlaygroundTimeoutError("The provider request timed out.") from exc
-    except httpx.HTTPStatusError as exc:
-        raise PlaygroundProviderError(
-            f"The provider returned HTTP {exc.response.status_code}."
-        ) from exc
     except httpx.RequestError as exc:
-        raise PlaygroundProviderError("Could not reach the provider.") from exc
+        raise PlaygroundProviderError(
+            "Could not reach the provider.", code="provider_unavailable"
+        ) from exc
     except ValueError as exc:
-        raise PlaygroundProviderError("The provider returned invalid JSON.") from exc
+        raise PlaygroundProviderError(
+            "The provider returned an invalid response.", code="malformed_response"
+        ) from exc
     finally:
         latency_ms = round((perf_counter() - started_at) * 1000)
         if owns_client:
             await http_client.aclose()
 
-    normalized = _normalize_response(provider, data)
     return PlaygroundResult(
         response=normalized.response,
         latency_ms=latency_ms,
@@ -191,18 +199,25 @@ async def _request_provider(
         )
 
     async with client.stream("POST", url, headers=headers, json=payload) as response:
-        response.raise_for_status()
         body = bytearray()
         async for chunk in response.aiter_bytes():
             body.extend(chunk)
             if len(body) > MAX_PROVIDER_RESPONSE_BYTES:
                 raise PlaygroundProviderError(
-                    "The provider response exceeds the safe size limit."
+                    "The provider returned a response that exceeds the safe size "
+                    "limit.",
+                    code="malformed_response",
                 )
+        if not 200 <= response.status_code < 300:
+            raise PlaygroundProviderError(
+                _http_failure_message(response.status_code, body),
+                code=_http_failure_code(response.status_code, body),
+            )
     parsed = json.loads(body)
     if not isinstance(parsed, dict):
         raise PlaygroundProviderError(
-            "The provider returned an invalid response object."
+            "The provider returned an invalid response object.",
+            code="malformed_response",
         )
     data: dict[str, Any] = parsed
     return data
@@ -317,7 +332,8 @@ def _normalize_response(provider: str, data: dict[str, Any]) -> PlaygroundResult
 def _required_text(value: object) -> str:
     if not isinstance(value, str) or not value.strip():
         raise PlaygroundProviderError(
-            "The provider response did not contain generated text."
+            "The provider response did not contain generated text.",
+            code="malformed_response",
         )
     return value.strip()
 
@@ -350,7 +366,9 @@ def _sum_optional_values(data: dict[str, Any], *keys: str) -> int | None:
 
 def _mapping(value: object) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise PlaygroundProviderError("The provider returned an invalid response.")
+        raise PlaygroundProviderError(
+            "The provider returned an invalid response.", code="malformed_response"
+        )
     return value
 
 
@@ -360,12 +378,80 @@ def _optional_mapping(value: object) -> dict[str, Any]:
 
 def _list(value: object) -> list[Any]:
     if not isinstance(value, list):
-        raise PlaygroundProviderError("The provider returned an invalid response.")
+        raise PlaygroundProviderError(
+            "The provider returned an invalid response.", code="malformed_response"
+        )
     return value
 
 
 def _first_mapping(value: object) -> dict[str, Any]:
     values = _list(value)
     if not values:
-        raise PlaygroundProviderError("The provider returned an empty response.")
+        raise PlaygroundProviderError(
+            "The provider returned an empty response.", code="malformed_response"
+        )
     return _mapping(values[0])
+
+
+def _http_failure_code(status_code: int, body: bytes | bytearray) -> str:
+    """Classify a provider rejection without retaining its untrusted body."""
+    hint = _provider_error_hint(body)
+    if hint in {
+        "authentication_error",
+        "invalid_api_key",
+        "api_key_invalid",
+        "unauthenticated",
+    }:
+        return "invalid_api_key"
+    if hint in {"rate_limit", "rate_limit_error", "resource_exhausted"}:
+        return "rate_limit"
+    if hint in {"timeout", "deadline_exceeded"}:
+        return "timeout"
+    if hint in {"model_not_found", "model_not_supported", "unsupported_model"}:
+        return "unsupported_model"
+    if status_code == 401:
+        return "invalid_api_key"
+    if status_code == 429:
+        return "rate_limit"
+    if status_code in {408, 504}:
+        return "timeout"
+    if status_code >= 500:
+        return "provider_unavailable"
+    return "provider_error"
+
+
+def _http_failure_message(status_code: int, body: bytes | bytearray) -> str:
+    """Return a safe application-authored explanation for a provider rejection."""
+    messages = {
+        "invalid_api_key": f"The provider rejected the API key (HTTP {status_code}).",
+        "rate_limit": f"The provider rate limit was reached (HTTP {status_code}).",
+        "timeout": f"The provider request timed out (HTTP {status_code}).",
+        "unsupported_model": (
+            f"The requested model is unsupported or unavailable (HTTP {status_code})."
+        ),
+        "provider_unavailable": (
+            f"The provider is currently unavailable (HTTP {status_code})."
+        ),
+    }
+    return messages.get(
+        _http_failure_code(status_code, body),
+        f"The provider returned HTTP {status_code}.",
+    )
+
+
+def _provider_error_hint(body: bytes | bytearray) -> str | None:
+    """Extract only standard provider error identifiers, never provider messages."""
+    try:
+        parsed = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    error = parsed.get("error")
+    candidates: list[object] = [parsed.get("code"), parsed.get("status")]
+    if isinstance(error, dict):
+        candidates.extend((error.get("type"), error.get("code"), error.get("status")))
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            return candidate.strip().lower()
+    return None
