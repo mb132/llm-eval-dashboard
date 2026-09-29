@@ -1,0 +1,3 @@
+Beantworte die folgende Kundenanfrage anhand der angegebenen Shopinformationen.
+
+{{input}}

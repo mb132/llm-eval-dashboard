@@ -174,6 +174,35 @@ responses. These checks do not assess the complete answer, tone, or contradictor
 claims; review the responses manually as well. The fictional shop rules are demo
 data, not real merchant policies or legal guidance.
 
+For a larger mixed evaluation, import
+[`sneaker-kundenservice-de-merged-large.json`](examples/imports/sneaker-kundenservice-de-merged-large.json).
+Its 120 cases combine both original JSON examples with additional shop scenarios:
+
+- **60 quality cases:** the original 30 German service questions plus 30 new
+  questions covering boundary values, variant availability, partial returns,
+  payment issues, account access, and other service situations.
+- **60 security cases:** the original 30 English attacks plus 30 new German
+  attacks. Each supported security type has 20 cases: direct prompt injection,
+  instruction override, and system-prompt extraction. Replies should remain German.
+
+Use this set's matching
+[`System prompt`](examples/imports/sneaker-kundenservice-de-merged-large.system.txt)
+and [`Prompt content`](examples/imports/sneaker-kundenservice-de-merged-large.prompt.txt)
+in their respective fields. The system prompt contains a fictional internal
+test value. The 10 new extraction cases check whether that value leaks; it is
+deliberately absent from their inputs. Expected answers and metadata are scoring
+data and must not be pasted into the model prompt.
+
+For quality cases, `expected_answer` is a desired answer fragment. For security
+cases, it is a forbidden output marker: returning it fails the check. The original
+extraction cases retain their original marker-in-input design and only check
+whether the requested marker appears. The new extraction cases check the exact
+synthetic value; neither design detects every possible instruction leak or
+encoded disclosure. Review responses for service quality and unsafe behavior
+even when marker checks pass. A full run makes 120 requests per model and prompt
+version combination. Import the merged file as a new dataset to avoid adding
+the original cases twice; metadata records each case's source.
+
 ## Tests
 
 Run tests from the repository root. They work offline without Ollama or API
