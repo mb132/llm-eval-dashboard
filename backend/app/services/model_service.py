@@ -114,13 +114,21 @@ async def update_model(
     """Apply only fields explicitly included in a patch request."""
     changes = payload.model_dump(exclude_unset=True, exclude={"pricing"})
     provider = model.provider
-    if "provider_id" in changes:
+    identity_changed = (
+        ("provider_id" in changes and changes["provider_id"] != model.provider_id)
+        or ("model_name" in changes and changes["model_name"] != model.model_name)
+    )
+    provider_changed = (
+        "provider_id" in changes and changes["provider_id"] != model.provider_id
+    )
+    if provider_changed:
         provider = await provider_service.get_provider(session, changes["provider_id"])
     if provider is None:
         return None
     for field, value in changes.items():
         setattr(model, field, value)
-    identity_changed = "provider_id" in changes or "model_name" in changes
+    if provider_changed:
+        model.provider = provider
     if payload.pricing is not None or identity_changed:
         _apply_pricing(
             model,

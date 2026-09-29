@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 const PROVIDER_LABELS: Record<Provider, string> = {
   ollama: "Ollama",
   openai: "OpenAI",
+  openrouter: "OpenRouter",
   anthropic: "Anthropic",
   gemini: "Google Gemini",
   openai_compatible: "OpenAI-compatible API",

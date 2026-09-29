@@ -71,6 +71,94 @@ def test_model_configuration_crud_never_returns_secrets(client: TestClient) -> N
     assert client.get("/api/models").json() == []
 
 
+def test_openrouter_requires_a_key_to_run_and_uses_no_direct_provider_pricing(
+    client: TestClient,
+) -> None:
+    provider = create_provider(client, kind="openrouter")
+    assert provider["base_url"] is None
+    assert provider["api_key_requirement"] == "required"
+    model = client.post(
+        "/api/models",
+        json={
+            "display_name": "Routed model",
+            "provider_id": provider["id"],
+            "model_name": "openai/gpt-5.6-sol",
+        },
+    )
+    assert model.status_code == 201
+    assert model.json()["model_name"] == "openai/gpt-5.6-sol"
+    assert model.json()["pricing"] is None
+    assert model.json()["runnable"] is False
+
+    configured = client.patch(
+        f"/api/providers/{provider['id']}", json={"api_key": "openrouter-secret"}
+    )
+    assert configured.status_code == 200
+    assert "openrouter-secret" not in configured.text
+    loaded = client.get(f"/api/models/{model.json()['id']}")
+    assert loaded.json()["runnable"] is True
+    assert "openrouter-secret" not in loaded.text
+    invalid = client.post(
+        "/api/providers",
+        json={
+            "display_name": "Invalid OpenRouter endpoint",
+            "kind": "openrouter",
+            "base_url": "https://example.test/v1",
+        },
+    )
+    assert invalid.status_code == 422
+
+
+def test_model_provider_switch_and_identity_pricing_rules(client: TestClient) -> None:
+    original = create_provider(client, kind="openai", api_key="openai-secret")
+    replacement = create_provider(client, kind="openrouter", api_key="router-secret")
+    created = client.post(
+        "/api/models",
+        json={
+            "display_name": "Shared model",
+            "provider_id": original["id"],
+            "model_name": "gpt-5.6-sol",
+            "pricing": {
+                "mode": "manual",
+                "input_usd_per_million_tokens": "1",
+                "output_usd_per_million_tokens": "2",
+            },
+        },
+    )
+    assert created.status_code == 201
+    model_id = created.json()["id"]
+    unchanged = client.patch(
+        f"/api/models/{model_id}",
+        json={
+            "display_name": "Renamed",
+            "provider_id": original["id"],
+            "model_name": "gpt-5.6-sol",
+        },
+    )
+    assert unchanged.json()["pricing"]["source"] == "manual"
+    switched = client.patch(
+        f"/api/models/{model_id}", json={"provider_id": replacement["id"]}
+    )
+    assert switched.status_code == 200
+    assert switched.json()["provider"]["kind"] == "openrouter"
+    assert switched.json()["pricing"] is None
+    reloaded = client.get(f"/api/models/{model_id}").json()
+    assert reloaded["provider"]["id"] == replacement["id"]
+    override = client.patch(
+        f"/api/models/{model_id}",
+        json={
+            "model_name": "anthropic/claude-test",
+            "pricing": {
+                "mode": "manual",
+                "input_usd_per_million_tokens": "3",
+                "output_usd_per_million_tokens": "4",
+            },
+        },
+    )
+    assert override.json()["pricing"]["source"] == "manual"
+    assert override.json()["pricing"]["input_usd_per_million_tokens"] == "3.000000"
+
+
 def test_model_pricing_supports_catalog_manual_and_unknown_models(
     client: TestClient,
 ) -> None:

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { StrictMode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -118,5 +118,102 @@ describe("model pricing", () => {
       },
     })
     expect(await screen.findByText(/Estimated pricing: \$1\.250000/)).toBeVisible()
+  })
+
+  it("edits the whole model while preserving pricing when identity is unchanged", async () => {
+    const user = userEvent.setup()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([provider]))
+      .mockResolvedValueOnce(jsonResponse([model]))
+      .mockResolvedValueOnce(jsonResponse({ ...model, display_name: "Renamed" }))
+      .mockResolvedValueOnce(jsonResponse([provider]))
+      .mockResolvedValueOnce(jsonResponse([{ ...model, display_name: "Renamed" }]))
+
+    render(<ModelsPage />)
+    await user.click(await screen.findByRole("button", { name: "Edit Flagship" }))
+    expect(screen.getByRole("dialog", { name: "Edit model" })).toBeVisible()
+    expect(screen.getByLabelText("Display name")).toHaveValue("Flagship")
+    expect(screen.getByLabelText("Model name")).toHaveValue("new-model")
+    expect(screen.getByLabelText("Active")).toBeChecked()
+    await user.clear(screen.getByLabelText("Display name"))
+    await user.type(screen.getByLabelText("Display name"), "Renamed")
+    await user.click(screen.getByLabelText("Active"))
+    await user.click(screen.getByRole("button", { name: "Save model" }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5))
+    const input = JSON.parse(String(fetchMock.mock.calls[2][1]?.body))
+    expect(input).toMatchObject({ display_name: "Renamed", active: false, model_name: "new-model" })
+    expect(input).not.toHaveProperty("pricing")
+  })
+
+  it("resets pricing when switching to OpenRouter and accepts manual replacement rates", async () => {
+    const user = userEvent.setup()
+    const router: ProviderConfiguration = {
+      ...provider,
+      id: 2,
+      display_name: "OpenRouter account",
+      kind: "openrouter",
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([provider, router]))
+      .mockResolvedValueOnce(jsonResponse([model]))
+      .mockResolvedValueOnce(jsonResponse({ ...model, provider: router }))
+      .mockResolvedValueOnce(jsonResponse([provider, router]))
+      .mockResolvedValueOnce(jsonResponse([{ ...model, provider: router }]))
+
+    render(<ModelsPage />)
+    await user.click(await screen.findByRole("button", { name: "Edit Flagship" }))
+    expect(screen.getByLabelText("Pricing basis")).toHaveValue("manual")
+    await user.selectOptions(screen.getByLabelText("Provider"), "2")
+    expect(screen.getByLabelText("Pricing basis")).toHaveValue("catalog")
+    expect(screen.getByText(/Changing the provider or model ID resets pricing/)).toBeVisible()
+    await user.selectOptions(screen.getByLabelText("Provider"), "1")
+    expect(screen.getByLabelText("Pricing basis")).toHaveValue("manual")
+    expect(screen.getByLabelText("Input USD / 1M tokens")).toHaveValue(1.25)
+    await user.selectOptions(screen.getByLabelText("Provider"), "2")
+    await user.selectOptions(screen.getByLabelText("Pricing basis"), "manual")
+    await user.clear(screen.getByLabelText("Input USD / 1M tokens"))
+    await user.type(screen.getByLabelText("Input USD / 1M tokens"), "3")
+    await user.clear(screen.getByLabelText("Output USD / 1M tokens"))
+    await user.type(screen.getByLabelText("Output USD / 1M tokens"), "4")
+    await user.click(screen.getByRole("button", { name: "Save model" }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5))
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toMatchObject({
+      provider_id: 2,
+      pricing: {
+        mode: "manual",
+        input_usd_per_million_tokens: "3",
+        output_usd_per_million_tokens: "4",
+      },
+    })
+  })
+
+  it("keeps edits after a validation error and discards them when the dialog closes", async () => {
+    const user = userEvent.setup()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([provider]))
+      .mockResolvedValueOnce(jsonResponse([model]))
+      .mockResolvedValueOnce(jsonResponse({ detail: "Save failed" }, 422))
+
+    render(<ModelsPage />)
+    await user.click(await screen.findByRole("button", { name: "Edit Flagship" }))
+    await user.clear(screen.getByLabelText("Display name"))
+    await user.type(screen.getByLabelText("Display name"), "Changed")
+    await user.clear(screen.getByLabelText("Default parameters"))
+    await user.type(screen.getByLabelText("Default parameters"), "invalid")
+    await user.click(screen.getByRole("button", { name: "Save model" }))
+    expect(await screen.findByRole("alert")).toBeVisible()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(screen.getByLabelText("Display name")).toHaveValue("Changed")
+
+    fireEvent.change(screen.getByLabelText("Default parameters"), { target: { value: "{}" } })
+    await user.click(screen.getByRole("button", { name: "Save model" }))
+    expect(await screen.findByText("Save failed")).toBeVisible()
+    expect(screen.getByLabelText("Display name")).toHaveValue("Changed")
+    await user.click(screen.getByRole("button", { name: "Close" }))
+    await user.click(screen.getByRole("button", { name: "Edit Flagship" }))
+    expect(screen.getByLabelText("Display name")).toHaveValue("Flagship")
+    expect(screen.queryByText("Save failed")).not.toBeInTheDocument()
   })
 })

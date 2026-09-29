@@ -18,6 +18,7 @@ MAX_REPORTED_TOKENS = 1_000_000_000
 DEFAULT_BASE_URLS = {
     "ollama": "http://localhost:11434",
     "openai": "https://api.openai.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
     "anthropic": "https://api.anthropic.com",
     "gemini": "https://generativelanguage.googleapis.com/v1beta",
 }
@@ -70,6 +71,7 @@ async def generate_prompt(
     if provider not in {
         "ollama",
         "openai",
+        "openrouter",
         "anthropic",
         "gemini",
         "openai_compatible",
@@ -141,7 +143,7 @@ async def _request_provider(
         if system_prompt:
             payload["system"] = system_prompt
         url = f"{_base_url(model).rstrip('/')}/api/generate"
-    elif provider in {"openai", "openai_compatible"}:
+    elif provider in {"openai", "openrouter", "openai_compatible"}:
         if credential:
             headers["Authorization"] = f"Bearer {credential}"
         messages = []
@@ -243,7 +245,10 @@ def _resolve_credential(model: ModelConfiguration) -> str | None:
         raise PlaygroundConfigurationError(
             "Stored provider credential is unavailable."
         ) from exc
-    if model.provider.kind in {"openai", "anthropic", "gemini"} and not credential:
+    if (
+        model.provider.kind in {"openai", "openrouter", "anthropic", "gemini"}
+        and not credential
+    ):
         raise PlaygroundConfigurationError(
             f"The {model.provider.kind} provider requires configured credentials."
         )
@@ -270,7 +275,7 @@ def _normalize_response(provider: str, data: dict[str, Any]) -> PlaygroundResult
         output_tokens = _optional_int(data.get("eval_count"))
         total_tokens = _sum_tokens(input_tokens, output_tokens)
         finish_reason = _optional_text(data.get("done_reason"))
-    elif provider in {"openai", "openai_compatible"}:
+    elif provider in {"openai", "openrouter", "openai_compatible"}:
         choice = _first_mapping(data.get("choices"))
         message = _mapping(choice.get("message"))
         text = _required_text(message.get("content"))

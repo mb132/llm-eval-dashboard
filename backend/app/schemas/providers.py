@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class ProviderType(StrEnum):
     OLLAMA = "ollama"
     OPENAI = "openai"
+    OPENROUTER = "openrouter"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
     OPENAI_COMPATIBLE = "openai_compatible"
@@ -21,6 +22,7 @@ class ProviderType(StrEnum):
 DEFAULT_BASE_URLS = {ProviderType.OLLAMA: "http://localhost:11434"}
 FIXED_ENDPOINT_PROVIDERS = {
     ProviderType.OPENAI,
+    ProviderType.OPENROUTER,
     ProviderType.ANTHROPIC,
     ProviderType.GEMINI,
 }

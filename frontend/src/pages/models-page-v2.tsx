@@ -29,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea"
 const PROVIDERS: Provider[] = [
   "ollama",
   "openai",
+  "openrouter",
   "anthropic",
   "gemini",
   "openai_compatible",
@@ -37,6 +38,7 @@ const PROVIDERS: Provider[] = [
 const LABELS: Record<Provider, string> = {
   ollama: "Ollama",
   openai: "OpenAI",
+  openrouter: "OpenRouter",
   anthropic: "Anthropic",
   gemini: "Google Gemini",
   openai_compatible: "OpenAI-compatible API",
@@ -48,7 +50,7 @@ export function ModelsPage() {
   const [models, setModels] = useState<ModelConfiguration[]>([])
   const [providerDialog, setProviderDialog] = useState(false)
   const [modelDialog, setModelDialog] = useState(false)
-  const [pricingModel, setPricingModel] = useState<ModelConfiguration | null>(null)
+  const [editingModel, setEditingModel] = useState<ModelConfiguration | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [hasLoaded, setHasLoaded] = useState(false)
@@ -127,7 +129,7 @@ export function ModelsPage() {
         models={models}
         isLoading={isLoading && !hasLoaded}
         onAdd={() => setModelDialog(true)}
-        onEditPricing={setPricingModel}
+        onEdit={setEditingModel}
         onRemove={removeModel}
       />
 
@@ -159,18 +161,20 @@ export function ModelsPage() {
         />
       </Dialog>
       <Dialog
-        open={pricingModel !== null}
+        open={editingModel !== null}
         onOpenChange={(open) => {
-          if (!open) setPricingModel(null)
+          if (!open) setEditingModel(null)
         }}
-        title="Edit model pricing"
-        description="Costs are estimates based on these USD rates and reported token usage."
+        title="Edit model"
+        description="Update the model, provider connection, parameters, status, and pricing."
       >
-        {pricingModel && (
-          <PricingForm
-            model={pricingModel}
+        {editingModel && (
+          <ModelForm
+            key={editingModel.id}
+            model={editingModel}
+            providers={providers}
             onSaved={() => {
-              setPricingModel(null)
+              setEditingModel(null)
               void load()
             }}
           />
@@ -248,14 +252,14 @@ function ModelList({
   models,
   isLoading,
   onAdd,
-  onEditPricing,
+  onEdit,
   onRemove,
 }: {
   providersAvailable: boolean
   models: ModelConfiguration[]
   isLoading: boolean
   onAdd: () => void
-  onEditPricing: (model: ModelConfiguration) => void
+  onEdit: (model: ModelConfiguration) => void
   onRemove: (model: ModelConfiguration) => Promise<void>
 }) {
   return (
@@ -299,8 +303,8 @@ function ModelList({
               <div className="flex">
                 <Button
                   className="bg-transparent p-2 text-foreground hover:bg-muted"
-                  aria-label={`Edit pricing for ${model.display_name}`}
-                  onClick={() => onEditPricing(model)}
+                  aria-label={`Edit ${model.display_name}`}
+                  onClick={() => onEdit(model)}
                 >
                   <Pencil className="size-4" />
                 </Button>
@@ -406,22 +410,48 @@ function ProviderForm({ onSaved }: { onSaved: () => void }) {
 
 function ModelForm({
   providers,
+  model,
   onSaved,
 }: {
   providers: ProviderConfiguration[]
+  model?: ModelConfiguration
   onSaved: () => void
 }) {
-  const [name, setName] = useState("")
-  const [providerId, setProviderId] = useState(String(providers[0]?.id ?? ""))
-  const [modelName, setModelName] = useState("")
-  const [parameters, setParameters] = useState("{}")
-  const [pricingMode, setPricingMode] = useState<PricingSelection["mode"]>("catalog")
-  const [inputPrice, setInputPrice] = useState("")
-  const [outputPrice, setOutputPrice] = useState("")
+  const [name, setName] = useState(model?.display_name ?? "")
+  const [providerId, setProviderId] = useState(String(model?.provider.id ?? providers[0]?.id ?? ""))
+  const [modelName, setModelName] = useState(model?.model_name ?? "")
+  const [parameters, setParameters] = useState(JSON.stringify(model?.parameters ?? {}, null, 2))
+  const [active, setActive] = useState(model?.active ?? true)
+  const [pricingMode, setPricingMode] = useState<PricingSelection["mode"]>(
+    model?.pricing?.source === "manual" ? "manual" : model?.pricing ? "catalog" : model ? "unavailable" : "catalog",
+  )
+  const [inputPrice, setInputPrice] = useState(model?.pricing?.input_usd_per_million_tokens ?? "")
+  const [outputPrice, setOutputPrice] = useState(model?.pricing?.output_usd_per_million_tokens ?? "")
+  const [pricingChanged, setPricingChanged] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  function updateIdentity(nextProviderId: string, nextModelName: string) {
+    if (model && nextProviderId === String(model.provider.id) && nextModelName === model.model_name) {
+      setPricingMode(model.pricing?.source === "manual" ? "manual" : model.pricing ? "catalog" : "unavailable")
+      setInputPrice(model.pricing?.input_usd_per_million_tokens ?? "")
+      setOutputPrice(model.pricing?.output_usd_per_million_tokens ?? "")
+      setPricingChanged(false)
+    } else {
+      setPricingMode("catalog")
+      setInputPrice("")
+      setOutputPrice("")
+      setPricingChanged(true)
+    }
+    setProviderId(nextProviderId)
+    setModelName(nextModelName)
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (saving) return
+    setSaving(true)
+    setError(null)
     try {
       const parsed: unknown = JSON.parse(parameters)
       if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
@@ -432,13 +462,16 @@ function ModelForm({
         provider_id: Number(providerId),
         model_name: modelName,
         parameters: parsed as Record<string, unknown>,
-        active: true,
-        pricing: pricingSelection(pricingMode, inputPrice, outputPrice),
+        active,
+        ...(model && !pricingChanged ? {} : { pricing: pricingSelection(pricingMode, inputPrice, outputPrice) }),
       }
-      await createModel(input)
+      if (model) await updateModel(model.id, input)
+      else await createModel(input)
       onSaved()
     } catch (caught) {
       setError(errorMessage(caught))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -451,7 +484,9 @@ function ModelForm({
       </label>
       <label className="block text-sm">
         Provider
-        <Select value={providerId} onChange={(event) => setProviderId(event.target.value)}>
+        <Select value={providerId} onChange={(event) => {
+          updateIdentity(event.target.value, modelName)
+        }}>
           {providers.map((provider) => (
             <option key={provider.id} value={provider.id}>
               {provider.display_name} · {LABELS[provider.kind]}
@@ -464,7 +499,9 @@ function ModelForm({
         <Input
           required
           value={modelName}
-          onChange={(event) => setModelName(event.target.value)}
+          onChange={(event) => {
+            updateIdentity(providerId, event.target.value)
+          }}
           placeholder="gpt-5.6-sol"
         />
       </label>
@@ -476,69 +513,29 @@ function ModelForm({
           onChange={(event) => setParameters(event.target.value)}
         />
       </label>
-      <details>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} />
+        Active
+      </label>
+      {model && pricingChanged && (providerId !== String(model.provider.id) || modelName !== model.model_name) && (
+        <p className="text-xs text-muted-foreground">
+          Changing the provider or model ID resets pricing to the catalog. Unknown models will show cost unavailable unless you enter manual rates.
+        </p>
+      )}
+      <details open={!!model}>
         <summary className="cursor-pointer text-sm font-medium">Advanced pricing</summary>
         <div className="mt-3">
           <PricingFields
             mode={pricingMode}
             inputPrice={inputPrice}
             outputPrice={outputPrice}
-            onMode={setPricingMode}
-            onInput={setInputPrice}
-            onOutput={setOutputPrice}
+            onMode={(value) => { setPricingMode(value); setPricingChanged(true) }}
+            onInput={(value) => { setInputPrice(value); setPricingChanged(true) }}
+            onOutput={(value) => { setOutputPrice(value); setPricingChanged(true) }}
           />
         </div>
       </details>
-      <Button type="submit">Save model</Button>
-    </form>
-  )
-}
-
-function PricingForm({
-  model,
-  onSaved,
-}: {
-  model: ModelConfiguration
-  onSaved: () => void
-}) {
-  const initialMode = model.pricing?.source === "manual"
-    ? "manual"
-    : model.pricing
-      ? "catalog"
-      : "unavailable"
-  const [mode, setMode] = useState<PricingSelection["mode"]>(initialMode)
-  const [inputPrice, setInputPrice] = useState(
-    model.pricing?.input_usd_per_million_tokens ?? "",
-  )
-  const [outputPrice, setOutputPrice] = useState(
-    model.pricing?.output_usd_per_million_tokens ?? "",
-  )
-  const [error, setError] = useState<string | null>(null)
-
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    try {
-      await updateModel(model.id, {
-        pricing: pricingSelection(mode, inputPrice, outputPrice),
-      })
-      onSaved()
-    } catch (caught) {
-      setError(errorMessage(caught))
-    }
-  }
-
-  return (
-    <form className="space-y-4" onSubmit={submit}>
-      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-      <PricingFields
-        mode={mode}
-        inputPrice={inputPrice}
-        outputPrice={outputPrice}
-        onMode={setMode}
-        onInput={setInputPrice}
-        onOutput={setOutputPrice}
-      />
-      <Button type="submit">Save pricing</Button>
+      <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save model"}</Button>
     </form>
   )
 }

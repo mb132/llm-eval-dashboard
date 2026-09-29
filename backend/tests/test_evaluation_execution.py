@@ -4,7 +4,7 @@ import asyncio
 from uuid import UUID
 
 from app.api import evaluations
-from app.models import EvaluationResult, ModelConfiguration
+from app.models import EvaluationResult, ModelConfiguration, ProviderConfiguration
 from app.services import evaluation_execution
 from app.services.evaluation_execution import (
     execute_evaluation_run,
@@ -18,6 +18,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 MODEL_ID = "1"
+
+
+def test_openrouter_evaluation_output_limit_uses_max_tokens() -> None:
+    model = ModelConfiguration(
+        display_name="Routed model",
+        model_name="openai/gpt-5.6-sol",
+        parameters={"max_tokens": 2048},
+        provider=ProviderConfiguration(display_name="OpenRouter", kind="openrouter"),
+    )
+    assert evaluation_execution._evaluation_output_token_limit(model) == 1024
+    model.parameters = {"max_tokens": 321}
+    assert evaluation_execution._evaluation_output_token_limit(model) == 321
 
 
 def create_inputs(client: TestClient, *, second_case: bool = True) -> tuple[str, str]:

@@ -212,7 +212,7 @@ Open <http://localhost:8000>.
 
 ## Configure models
 
-Open the **Models** page to add Ollama, OpenAI, Anthropic, Google Gemini,
+Open the **Models** page to add Ollama, OpenAI, OpenRouter, Anthropic, Google Gemini,
 OpenAI-compatible, or custom endpoint configurations. Records are persisted in
 the same Alembic-managed SQLite database (`./llm_eval.db` by default). Set
 `DATABASE_URL` to use another
@@ -221,6 +221,15 @@ SQLite location.
 Create named provider connections on the Models page, then link one or more
 models to each connection. Provider API keys are encrypted in SQLite and are
 write-only: they are never returned by the API or shown in the browser.
+OpenRouter uses its official chat completions endpoint and requires an API key
+before its models can run. Enter each OpenRouter model ID manually, including its
+provider prefix. Set manual USD rates to estimate costs; OpenRouter rates are not
+imported into the built-in catalog.
+
+The pencil beside a model opens the full editor. You can change its name,
+provider connection, model ID, parameters, active status, and pricing. Changing
+the provider or model ID resets pricing to a catalog lookup; enter manual rates
+when the new model is absent from the catalog.
 
 Set `LLM_EVAL_MASTER_KEY` before starting the application. It must be a
 URL-safe base64 encoding of 32 random bytes; for example:
@@ -233,7 +242,7 @@ Keep this value separate from SQLite backups. Losing or changing it makes
 stored provider credentials unrecoverable, requiring them to be entered again.
 This application has no authentication, so do not expose it publicly.
 
-OpenAI, Anthropic, and Gemini use fixed official endpoints and require a key.
+OpenAI, OpenRouter, Anthropic, and Gemini use fixed official endpoints and require a key.
 OpenAI-compatible endpoints require a base URL and may use a key; Ollama may
 also use one. Keys require HTTPS except for localhost or loopback URLs. Custom
 endpoints remain configuration-only and cannot store a key.
@@ -245,7 +254,7 @@ one-shot text prompt with an optional system prompt. The backend resolves the
 configured credential only for that request and returns the reply, latency,
 token usage, and finish reason. Playground prompts and replies are not stored.
 
-Ollama, OpenAI, Anthropic, Gemini, and OpenAI-compatible configurations are
+Ollama, OpenAI, OpenRouter, Anthropic, Gemini, and OpenAI-compatible configurations are
 executable. Custom endpoints remain configuration-only until a request protocol
 is defined for them.
 

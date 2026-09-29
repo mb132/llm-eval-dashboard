@@ -1,6 +1,7 @@
 export const PROVIDERS = [
   "ollama",
   "openai",
+  "openrouter",
   "anthropic",
   "gemini",
   "openai_compatible",

@@ -101,6 +101,7 @@ def test_ollama_adapter_uses_configuration_and_normalizes_metrics() -> None:
     ("provider", "base_url", "credential_name"),
     [
         ("openai", None, "OPENAI_API_KEY"),
+        ("openrouter", None, "OPENROUTER_API_KEY"),
         ("openai_compatible", "https://compatible.test/v1", None),
     ],
 )
@@ -118,7 +119,11 @@ def test_openai_adapters_send_chat_completions(
     )
 
     def handler(request: httpx.Request) -> httpx.Response:
-        expected_base = base_url or "https://api.openai.com/v1"
+        expected_base = base_url or (
+            "https://openrouter.ai/api/v1"
+            if provider == "openrouter"
+            else "https://api.openai.com/v1"
+        )
         assert str(request.url) == f"{expected_base}/chat/completions"
         if credential_name:
             assert request.headers["authorization"] == "Bearer test-secret"
@@ -155,6 +160,7 @@ def test_openai_adapters_send_chat_completions(
 
     result = run_with_transport(model, handler, max_output_tokens=1024)
     assert result.response == "Hi!"
+    assert result.finish_reason == "stop"
     assert (result.input_tokens, result.output_tokens, result.total_tokens) == (7, 2, 9)
 
 
@@ -252,6 +258,10 @@ def test_configuration_errors_happen_before_provider_request() -> None:
         PlaygroundConfigurationError, match="requires configured credentials"
     ):
         asyncio.run(run(model_configuration("openai")))
+    with pytest.raises(
+        PlaygroundConfigurationError, match="requires configured credentials"
+    ):
+        asyncio.run(run(model_configuration("openrouter")))
     with pytest.raises(PlaygroundConfigurationError, match="requires a base URL"):
         asyncio.run(run(model_configuration("openai_compatible")))
     with pytest.raises(PlaygroundConfigurationError, match="executable protocol"):

@@ -56,6 +56,7 @@ MAX_RUN_PAGE_SIZE = 100
 OUTPUT_TOKEN_PARAMETER_BY_PROVIDER = {
     "ollama": "num_predict",
     "openai": "max_completion_tokens",
+    "openrouter": "max_tokens",
     "openai_compatible": "max_tokens",
     "anthropic": "max_tokens",
     "gemini": "maxOutputTokens",
