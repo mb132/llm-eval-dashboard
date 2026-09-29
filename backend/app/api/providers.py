@@ -12,10 +12,45 @@ from ..schemas.providers import (
     ProviderConfigurationResponse,
     ProviderConfigurationUpdate,
 )
-from ..services import provider_service
+from ..services import model_service, provider_service
+from ..services.openrouter_metadata import get_account_limits, refresh_provider_prices
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
+
+
+@router.post("/{provider_id}/refresh-pricing")
+async def refresh_openrouter_prices(provider_id: int, session: SessionDependency):
+    provider = await _get_provider_or_404(session, provider_id)
+    if provider.kind != "openrouter":
+        raise HTTPException(
+            status_code=409, detail="Pricing refresh requires OpenRouter."
+        )
+    count, error = await refresh_provider_prices(session, provider, force=True)
+    models = await model_service.list_models(session)
+    return {
+        "updated_count": count,
+        "available": error is None,
+        "message": error,
+        "models": [
+            model_service.to_response(item)
+            for item in models
+            if item.provider_id == provider.id
+        ],
+    }
+
+
+@router.get("/{provider_id}/limits")
+async def get_openrouter_limits(
+    provider_id: int,
+    session: SessionDependency,
+    refresh: bool = False,
+):
+    provider = await _get_provider_or_404(session, provider_id)
+    if provider.kind != "openrouter":
+        raise HTTPException(status_code=409, detail="Quota lookup requires OpenRouter.")
+    result = await get_account_limits(provider, force=refresh)
+    return result
 
 
 @router.get("", response_model=list[ProviderConfigurationResponse])

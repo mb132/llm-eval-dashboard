@@ -4,6 +4,7 @@ import json
 import httpx
 import pytest
 from app.models import ModelConfiguration, ProviderConfiguration
+from app.services import playground
 from app.services.credentials import encrypt_api_key
 from app.services.playground import (
     MAX_PROVIDER_RESPONSE_BYTES,
@@ -162,6 +163,242 @@ def test_openai_adapters_send_chat_completions(
     assert result.response == "Hi!"
     assert result.finish_reason == "stop"
     assert (result.input_tokens, result.output_tokens, result.total_tokens) == (7, 2, 9)
+
+
+def test_paid_openrouter_requests_have_no_default_rpm_pacing(monkeypatch) -> None:
+    model = model_configuration("openrouter", api_key="test-secret")
+    waits: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    monkeypatch.setattr(playground, "monotonic", lambda: 1000.0)
+    monkeypatch.setattr(playground, "_openrouter_next_slot", {})
+    monkeypatch.setattr(playground, "_openrouter_cooldown", {})
+    monkeypatch.setattr(playground.asyncio, "sleep", fake_sleep)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}]},
+            request=request,
+        )
+
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await asyncio.gather(
+                *(
+                    generate_prompt(model, "Hello", None, client=client)
+                    for _ in range(3)
+                )
+            )
+
+    asyncio.run(run())
+    assert waits == []
+
+
+def test_free_openrouter_requests_keep_conservative_shared_spacing(monkeypatch) -> None:
+    model = model_configuration(
+        "openrouter", model_name="test-model:free", api_key="test-secret"
+    )
+    waits: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    monkeypatch.setattr(playground, "monotonic", lambda: 1000.0)
+    monkeypatch.setattr(playground, "_openrouter_next_slot", {})
+    monkeypatch.setattr(playground, "_openrouter_cooldown", {})
+    monkeypatch.setattr(playground.asyncio, "sleep", fake_sleep)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}]},
+            request=request,
+        )
+
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await asyncio.gather(
+                *(
+                    generate_prompt(model, "Hello", None, client=client)
+                    for _ in range(3)
+                )
+            )
+
+    asyncio.run(run())
+    assert waits == pytest.approx([3.2, 6.4])
+
+
+def test_openrouter_429_waits_for_retry_after_then_retries(monkeypatch) -> None:
+    model = model_configuration("openrouter", api_key="test-secret")
+    clock = [1000.0]
+    waits: list[float] = []
+    calls = 0
+
+    async def fake_sleep(seconds: float) -> None:
+        waits.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(playground, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(playground.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(playground, "_openrouter_next_slot", {})
+    monkeypatch.setattr(playground, "_openrouter_cooldown", {})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(
+                429,
+                headers={"Retry-After": "2", "X-RateLimit-Limit": "20"},
+                json={
+                    "error": {
+                        "code": 429,
+                        "metadata": {"error_type": "rate_limit_exceeded"},
+                    }
+                },
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "OK"}}]},
+            request=request,
+        )
+
+    assert run_with_transport(model, handler).response == "OK"
+    assert calls == 2
+    assert waits == [2.0]
+    assert playground._openrouter_cooldown[(1, "*")] == 1002.0
+
+
+def test_openrouter_429_without_hint_uses_bounded_backoff(monkeypatch) -> None:
+    model = model_configuration("openrouter", api_key="test-secret")
+    clock = [1000.0]
+    waits: list[float] = []
+    calls = 0
+
+    async def fake_sleep(seconds: float) -> None:
+        waits.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(playground, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(playground.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(playground.random, "uniform", lambda _a, _b: 0.0)
+    monkeypatch.setattr(playground, "_openrouter_next_slot", {})
+    monkeypatch.setattr(playground, "_openrouter_cooldown", {})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            return httpx.Response(429, json={"error": {"code": 429}}, request=request)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "OK"}}]},
+            request=request,
+        )
+
+    assert run_with_transport(model, handler).response == "OK"
+    assert calls == 3
+    assert waits == [2.0, 4.0]
+
+
+def test_openrouter_long_reset_returns_retry_later_without_sending_again(
+    monkeypatch,
+) -> None:
+    model = model_configuration("openrouter", api_key="test-secret")
+    monkeypatch.setattr(playground, "monotonic", lambda: 1000.0)
+    monkeypatch.setattr(playground, "_openrouter_next_slot", {})
+    monkeypatch.setattr(playground, "_openrouter_cooldown", {})
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            429,
+            headers={"Retry-After": "60", "X-RateLimit-Limit": "20"},
+            json={"error": {"code": 429}},
+            request=request,
+        )
+
+    with pytest.raises(PlaygroundProviderError, match="beyond the automatic retry"):
+        run_with_transport(model, handler)
+    with pytest.raises(PlaygroundProviderError, match="Try again later"):
+        run_with_transport(model, handler)
+    assert calls == 1
+
+
+def test_openrouter_confirmed_daily_quota_is_not_retried() -> None:
+    model = model_configuration(
+        "openrouter", model_name="test-model:free", api_key="test-secret"
+    )
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            429,
+            json={"error": {"code": 429, "message": "free-models-per-day"}},
+            request=request,
+        )
+
+    with pytest.raises(PlaygroundProviderError) as error:
+        run_with_transport(model, handler)
+    assert error.value.code == "daily_quota"
+    assert calls == 1
+
+
+def test_openrouter_stops_after_two_automatic_retries(monkeypatch) -> None:
+    model = model_configuration("openrouter", api_key="test-secret")
+    clock = [1000.0]
+    calls = 0
+
+    async def fake_sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    monkeypatch.setattr(playground, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(playground.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(playground.random, "uniform", lambda _a, _b: 0.0)
+    monkeypatch.setattr(playground, "_openrouter_next_slot", {})
+    monkeypatch.setattr(playground, "_openrouter_cooldown", {})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, json={"error": {"code": 429}}, request=request)
+
+    with pytest.raises(PlaygroundProviderError, match="after two retries"):
+        run_with_transport(model, handler)
+    assert calls == 3
+
+
+def test_other_providers_do_not_retry_429() -> None:
+    model = model_configuration("openai", api_key="test-secret")
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, json={"error": {"code": 429}}, request=request)
+
+    with pytest.raises(PlaygroundProviderError) as error:
+        run_with_transport(model, handler)
+    assert error.value.code == "rate_limit"
+    assert calls == 1
+
+
+def test_openrouter_reset_header_accepts_epoch_milliseconds() -> None:
+    from datetime import UTC, datetime
+
+    reset = (datetime.now(UTC).timestamp() + 5) * 1000
+    delay = playground._response_retry_delay(
+        httpx.Headers({"X-RateLimit-Reset": str(reset)})
+    )
+    assert delay == pytest.approx(5.0, abs=1.0)
 
 
 def test_anthropic_adapter_uses_required_headers_and_default_limit() -> None:

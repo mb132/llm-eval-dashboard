@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -36,6 +37,7 @@ from .ollama import (
     OllamaError,
     OllamaResult,
 )
+from .openrouter_metadata import refresh_model_price
 from .playground import (
     PlaygroundConfigurationError,
     PlaygroundProviderError,
@@ -169,6 +171,8 @@ class _ModelConfigurationSnapshot:
     provider_api_key_ciphertext: str | None
     model_name: str
     parameters: dict[str, Any]
+    requests_per_minute: int | None = None
+    max_concurrent_requests: int | None = None
 
     def to_model(self) -> ModelConfiguration:
         return ModelConfiguration(
@@ -177,6 +181,8 @@ class _ModelConfigurationSnapshot:
             provider_id=self.provider_id,
             model_name=self.model_name,
             parameters=dict(self.parameters),
+            requests_per_minute=self.requests_per_minute,
+            max_concurrent_requests=self.max_concurrent_requests,
             active=True,
             provider=ProviderConfiguration(
                 id=self.provider_id,
@@ -208,6 +214,8 @@ class _ModelConfigurationSnapshot:
             provider_api_key_ciphertext=provider.api_key_ciphertext,
             model_name=result.provider_model_name,
             parameters=dict(result.model_parameters),
+            requests_per_minute=result.requests_per_minute,
+            max_concurrent_requests=result.max_concurrent_requests,
         )
 
 
@@ -278,6 +286,9 @@ async def create_evaluation_run(
             "One or more selected models contain invalid parameters."
         ) from exc
 
+    for model in configured_models:
+        await refresh_model_price(session, model)
+
     evaluation = EvaluationRun(
         status="pending",
         dataset_id=dataset.id,
@@ -315,6 +326,15 @@ async def create_evaluation_run(
                         pricing_source=model.pricing_source,
                         pricing_effective_date=model.pricing_effective_date,
                         pricing_source_url=model.pricing_source_url,
+                        pricing_fetched_at=model.pricing_fetched_at,
+                        pricing_stale=(
+                            model.pricing_source == "openrouter"
+                            and model.pricing_fetched_at is not None
+                            and model.pricing_fetched_at
+                            < datetime.now(UTC) - timedelta(hours=1)
+                        ),
+                        requests_per_minute=model.requests_per_minute,
+                        max_concurrent_requests=model.max_concurrent_requests,
                         prompt_id=version.prompt_id,
                         prompt_version_id=version.id,
                         prompt_name=prompt_name,
@@ -470,9 +490,7 @@ async def list_evaluation_results(
         raise EvaluationRunNotFoundError("Evaluation not found.")
     base_conditions = [EvaluationResult.evaluation_id == evaluation_id]
     unfiltered_total = await session.scalar(
-        select(func.count(EvaluationResult.id)).where(
-            *base_conditions
-        )
+        select(func.count(EvaluationResult.id)).where(*base_conditions)
     )
     conditions = [*base_conditions]
     filters = filters or ResultFilters()
@@ -484,7 +502,9 @@ async def list_evaluation_results(
         )
     category_conditions = []
     if filters.categories:
-        category_conditions.append(EvaluationResult.test_category.in_(filters.categories))
+        category_conditions.append(
+            EvaluationResult.test_category.in_(filters.categories)
+        )
     if filters.include_uncategorized_category:
         category_conditions.append(EvaluationResult.test_category.is_(None))
     if category_conditions:

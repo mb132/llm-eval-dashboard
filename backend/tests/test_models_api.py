@@ -180,6 +180,8 @@ def test_model_pricing_supports_catalog_manual_and_unknown_models(
         "source": "catalog",
         "effective_date": "2026-08-31",
         "source_url": "https://developers.openai.com/api/docs/models",
+        "fetched_at": None,
+        "stale": False,
     }
 
     manual = client.patch(

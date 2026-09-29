@@ -18,6 +18,7 @@ from .api.providers import router as providers_router
 from .database import SessionFactory
 from .services.credentials import validate_master_key
 from .services.evaluation_execution import fail_interrupted_runs
+from .services.model_service import configure_active_openrouter_limits
 
 
 @asynccontextmanager
@@ -25,6 +26,9 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     """Reconcile work interrupted by a previous local server process."""
     validate_master_key()
     await fail_interrupted_runs(application.state.evaluation_session_factory)
+    await configure_active_openrouter_limits(
+        application.state.evaluation_session_factory
+    )
     yield
 
 

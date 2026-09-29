@@ -698,7 +698,7 @@ function ResultCard({ result }: { result: EvaluationResult }) {
           <p className="text-xs text-muted-foreground">
             Estimate uses ${result.pricing.input_usd_per_million_tokens} input and
             ${result.pricing.output_usd_per_million_tokens} output per 1M tokens ·{" "}
-            {result.pricing.source} · effective {result.pricing.effective_date}
+            {result.pricing.source === "openrouter" ? `OpenRouter price retrieved ${result.pricing.fetched_at ?? result.pricing.effective_date}${result.pricing.stale ? " · stale" : ""}` : `${result.pricing.source} · effective ${result.pricing.effective_date}`}
             {result.pricing.source_url && (
               <> · <a className="underline" href={result.pricing.source_url} target="_blank" rel="noreferrer">source</a></>
             )}

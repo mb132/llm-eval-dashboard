@@ -1,4 +1,4 @@
-import { KeyRound, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react"
+import { KeyRound, LoaderCircle, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 
 import {
@@ -17,6 +17,9 @@ import {
   listProviders,
   type ProviderConfiguration,
   type ProviderConfigurationInput,
+  type OpenRouterLimits,
+  getOpenRouterLimits,
+  refreshOpenRouterPrices,
 } from "@/api/providers"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -48,6 +51,7 @@ const LABELS: Record<Provider, string> = {
 export function ModelsPage() {
   const [providers, setProviders] = useState<ProviderConfiguration[]>([])
   const [models, setModels] = useState<ModelConfiguration[]>([])
+  const [limits, setLimits] = useState<Record<number, OpenRouterLimits>>({})
   const [providerDialog, setProviderDialog] = useState(false)
   const [modelDialog, setModelDialog] = useState(false)
   const [editingModel, setEditingModel] = useState<ModelConfiguration | null>(null)
@@ -66,6 +70,11 @@ export function ModelsPage() {
       ])
       setProviders(nextProviders)
       setModels(nextModels)
+      const nextLimits = await Promise.all(nextProviders.filter((provider) => provider.kind === "openrouter").map(async (provider) => {
+        try { return [provider.id, await getOpenRouterLimits(provider.id)] as const }
+        catch { return [provider.id, { available: false, supported: true, fetched_at: null }] as const }
+      }))
+      setLimits(Object.fromEntries(nextLimits))
       setHasLoaded(true)
     } catch (caught) {
       setError(errorMessage(caught))
@@ -73,6 +82,19 @@ export function ModelsPage() {
       setIsLoading(false)
     }
   }, [])
+
+  async function refreshPrices(providerId: number) {
+    try {
+      const result = await refreshOpenRouterPrices(providerId)
+      setModels((current) => [
+        ...current.filter((model) => model.provider.id !== providerId),
+        ...result.models,
+      ].sort((a, b) => a.id - b.id))
+      if (!result.available) setError(result.message ?? "Could not refresh OpenRouter prices.")
+    } catch (caught) {
+      setError(errorMessage(caught))
+    }
+  }
 
   useEffect(() => {
     if (initialLoadStarted.current) return
@@ -120,9 +142,11 @@ export function ModelsPage() {
 
       <ProviderList
         providers={providers}
+        limits={limits}
         isLoading={isLoading && !hasLoaded}
         onAdd={() => setProviderDialog(true)}
         onRemove={removeProvider}
+        onRefreshPrices={refreshPrices}
       />
       <ModelList
         providersAvailable={providers.length > 0}
@@ -186,14 +210,18 @@ export function ModelsPage() {
 
 function ProviderList({
   providers,
+  limits,
   isLoading,
   onAdd,
   onRemove,
+  onRefreshPrices,
 }: {
   providers: ProviderConfiguration[]
+  limits: Record<number, OpenRouterLimits>
   isLoading: boolean
   onAdd: () => void
   onRemove: (provider: ProviderConfiguration) => Promise<void>
+  onRefreshPrices: (providerId: number) => Promise<void>
 }) {
   return (
     <Card>
@@ -230,7 +258,14 @@ function ProviderList({
                   <div className="text-xs text-muted-foreground">
                     {provider.base_url ?? "Official endpoint"} · {credentialLabel(provider)}
                   </div>
+                  {provider.kind === "openrouter" && <div className="mt-1 text-xs text-muted-foreground">
+                    {formatOpenRouterLimits(limits[provider.id])}
+                  </div>}
                 </div>
+                <div className="flex items-center">
+                {provider.kind === "openrouter" && <Button className="bg-transparent p-2 text-foreground hover:bg-muted" onClick={() => void onRefreshPrices(provider.id)} aria-label={`Refresh prices for ${provider.display_name}`}>
+                  <RefreshCw className="size-4" />
+                </Button>}
                 <Button
                   className="bg-transparent p-2 text-foreground hover:bg-muted"
                   aria-label={`Remove ${provider.display_name}`}
@@ -238,6 +273,7 @@ function ProviderList({
                 >
                   <Trash2 className="size-4 text-red-600" />
                 </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -299,6 +335,7 @@ function ModelList({
                 <div className="mt-1 text-xs text-muted-foreground">
                   {formatModelPricing(model)}
                 </div>
+                {model.provider.kind === "openrouter" && <div className="mt-1 text-xs text-muted-foreground">Upstream per-model rate quota: Unknown{model.requests_per_minute ? ` · local limit ${model.requests_per_minute} requests/min` : ""}{model.max_concurrent_requests ? ` · local concurrency ${model.max_concurrent_requests}` : ""}</div>}
               </div>
               <div className="flex">
                 <Button
@@ -422,23 +459,25 @@ function ModelForm({
   const [modelName, setModelName] = useState(model?.model_name ?? "")
   const [parameters, setParameters] = useState(JSON.stringify(model?.parameters ?? {}, null, 2))
   const [active, setActive] = useState(model?.active ?? true)
-  const [pricingMode, setPricingMode] = useState<PricingSelection["mode"]>(
-    model?.pricing?.source === "manual" ? "manual" : model?.pricing ? "catalog" : model ? "unavailable" : "catalog",
-  )
+  const initialProvider = providers.find((item) => String(item.id) === String(model?.provider.id ?? providers[0]?.id))
+  const [pricingMode, setPricingMode] = useState<PricingSelection["mode"]>(model?.pricing_mode ?? (model?.pricing?.source === "manual" ? "manual" : model?.pricing?.source === "catalog" ? "catalog" : model ? "unavailable" : initialProvider?.kind === "openrouter" ? "automatic" : "catalog"))
   const [inputPrice, setInputPrice] = useState(model?.pricing?.input_usd_per_million_tokens ?? "")
   const [outputPrice, setOutputPrice] = useState(model?.pricing?.output_usd_per_million_tokens ?? "")
+  const [rpm, setRpm] = useState(model?.requests_per_minute?.toString() ?? "")
+  const [maxConcurrent, setMaxConcurrent] = useState(model?.max_concurrent_requests?.toString() ?? "")
   const [pricingChanged, setPricingChanged] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function updateIdentity(nextProviderId: string, nextModelName: string) {
     if (model && nextProviderId === String(model.provider.id) && nextModelName === model.model_name) {
-      setPricingMode(model.pricing?.source === "manual" ? "manual" : model.pricing ? "catalog" : "unavailable")
+      setPricingMode(model.pricing_mode ?? (model.pricing?.source === "manual" ? "manual" : model.pricing?.source === "catalog" ? "catalog" : "unavailable"))
       setInputPrice(model.pricing?.input_usd_per_million_tokens ?? "")
       setOutputPrice(model.pricing?.output_usd_per_million_tokens ?? "")
       setPricingChanged(false)
     } else {
-      setPricingMode("catalog")
+      const selectedProvider = providers.find((item) => String(item.id) === nextProviderId)
+      setPricingMode(selectedProvider?.kind === "openrouter" ? "automatic" : "catalog")
       setInputPrice("")
       setOutputPrice("")
       setPricingChanged(true)
@@ -463,6 +502,10 @@ function ModelForm({
         model_name: modelName,
         parameters: parsed as Record<string, unknown>,
         active,
+        ...(providers.find((item) => String(item.id) === providerId)?.kind === "openrouter" ? {
+          requests_per_minute: rpm ? Number(rpm) : null,
+          max_concurrent_requests: maxConcurrent ? Number(maxConcurrent) : null,
+        } : {}),
         ...(model && !pricingChanged ? {} : { pricing: pricingSelection(pricingMode, inputPrice, outputPrice) }),
       }
       if (model) await updateModel(model.id, input)
@@ -519,7 +562,7 @@ function ModelForm({
       </label>
       {model && pricingChanged && (providerId !== String(model.provider.id) || modelName !== model.model_name) && (
         <p className="text-xs text-muted-foreground">
-          Changing the provider or model ID resets pricing to the catalog. Unknown models will show cost unavailable unless you enter manual rates.
+          Changing the provider or model ID resets pricing to automatic OpenRouter pricing or the built-in catalog, depending on the selected provider.
         </p>
       )}
       <details open={!!model}>
@@ -527,6 +570,7 @@ function ModelForm({
         <div className="mt-3">
           <PricingFields
             mode={pricingMode}
+            automaticAvailable={providers.find((item) => String(item.id) === providerId)?.kind === "openrouter"}
             inputPrice={inputPrice}
             outputPrice={outputPrice}
             onMode={(value) => { setPricingMode(value); setPricingChanged(true) }}
@@ -535,6 +579,14 @@ function ModelForm({
           />
         </div>
       </details>
+      {providers.find((item) => String(item.id) === providerId)?.kind === "openrouter" && <div className="space-y-2 rounded border p-3">
+        <p className="text-sm font-medium">Local request limits</p>
+        <p className="text-xs text-muted-foreground">OpenRouter does not publish dependable per-model quotas. These controls apply to requests from this dashboard.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm">Requests per minute<Input type="number" min="1" max="100000" value={rpm} onChange={(event) => setRpm(event.target.value)} placeholder="No limit" /></label>
+          <label className="block text-sm">Concurrent requests<Input type="number" min="1" max="1000" value={maxConcurrent} onChange={(event) => setMaxConcurrent(event.target.value)} placeholder="No limit" /></label>
+        </div>
+      </div>}
       <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save model"}</Button>
     </form>
   )
@@ -542,6 +594,7 @@ function ModelForm({
 
 function PricingFields({
   mode,
+  automaticAvailable,
   inputPrice,
   outputPrice,
   onMode,
@@ -549,6 +602,7 @@ function PricingFields({
   onOutput,
 }: {
   mode: PricingSelection["mode"]
+  automaticAvailable: boolean
   inputPrice: string
   outputPrice: string
   onMode: (value: PricingSelection["mode"]) => void
@@ -563,7 +617,8 @@ function PricingFields({
           value={mode}
           onChange={(event) => onMode(event.target.value as PricingSelection["mode"])}
         >
-          <option value="catalog">Built-in catalog (exact model match)</option>
+          <option value="catalog">Built-in catalog</option>
+          {automaticAvailable && <option value="automatic">Automatic OpenRouter pricing</option>}
           <option value="manual">Manual USD rates</option>
           <option value="unavailable">No price available</option>
         </Select>
@@ -622,8 +677,18 @@ function pricingSelection(
 }
 
 function formatModelPricing(model: ModelConfiguration) {
-  if (!model.pricing) return "Estimated cost unavailable"
-  return `Estimated pricing: $${model.pricing.input_usd_per_million_tokens} input / $${model.pricing.output_usd_per_million_tokens} output per 1M tokens · ${model.pricing.source} · effective ${model.pricing.effective_date}`
+  if (!model.pricing) return model.pricing_mode === "automatic" ? "Automatic OpenRouter price unavailable · estimated cost unavailable" : "Estimated cost unavailable"
+  const fetched = model.pricing.source === "openrouter"
+  return `Estimated pricing: $${model.pricing.input_usd_per_million_tokens} input / $${model.pricing.output_usd_per_million_tokens} output per 1M tokens · ${fetched ? "OpenRouter" : model.pricing.source} · ${fetched ? `retrieved ${model.pricing.fetched_at ?? model.pricing.effective_date}${model.pricing.stale ? " · stale" : ""}` : `effective ${model.pricing.effective_date}`}`
+}
+
+function formatOpenRouterLimits(limits?: OpenRouterLimits) {
+  if (!limits?.supported) return "Quota metadata unavailable for this endpoint."
+  if (!limits.available) return "Quota unknown · OpenRouter account metadata unavailable."
+  const daily = limits.free_model_daily_requests
+  const pieces = [daily ? `Free-model requests: ${daily.remaining ?? "?"} of ${daily.limit ?? "?"} remaining today` : "Free-model daily quota unknown"]
+  pieces.push(limits.limit_remaining_usd == null ? "Key spend remaining unknown" : `$${limits.limit_remaining_usd} key spend remaining`)
+  return `Advisory · ${pieces.join(" · ")}`
 }
 
 function credentialLabel(provider: ProviderConfiguration) {

@@ -61,6 +61,10 @@ def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
         "security_metric_version",
         "security_passed",
         "test_category",
+        "pricing_fetched_at",
+        "pricing_stale",
+        "requests_per_minute",
+        "max_concurrent_requests",
     } <= column_names(database_path, "evaluation_results")
     assert {"case_type", "security_test_type"} <= column_names(
         database_path, "test_cases"
@@ -69,6 +73,10 @@ def test_migrations_upgrade_downgrade_and_reupgrade(tmp_path: Path) -> None:
         "input_price_micro_usd_per_million",
         "output_price_micro_usd_per_million",
         "pricing_effective_date",
+        "pricing_mode",
+        "pricing_fetched_at",
+        "requests_per_minute",
+        "max_concurrent_requests",
     } <= column_names(database_path, "model_configurations")
 
     command.downgrade(config, "base")

@@ -213,6 +213,8 @@ export function EvaluationPage() {
                     />
                     <span>
                       <span className="block font-medium">{model.name}</span>
+                      {model.pricing_stale && <span className="block text-xs text-amber-700">OpenRouter price is stale; this run will use the last saved estimate.</span>}
+                      {model.pricing_unavailable && <span className="block text-xs text-amber-700">OpenRouter price is unavailable; this run will have no cost estimate unless pricing refresh succeeds.</span>}
                       <span className="mt-1 block font-mono text-xs text-muted-foreground">
                         {model.model_name}
                       </span>

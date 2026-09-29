@@ -34,7 +34,13 @@ const model: ModelConfiguration = {
     source: "manual",
     effective_date: "2026-08-31",
     source_url: null,
+    fetched_at: null,
+    stale: false,
   },
+  pricing_mode: "manual",
+  pricing_fetched_at: null,
+  requests_per_minute: null,
+  max_concurrent_requests: null,
   created_at: "2026-08-31T08:00:00Z",
 }
 
@@ -157,15 +163,17 @@ describe("model pricing", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse([provider, router]))
       .mockResolvedValueOnce(jsonResponse([model]))
-      .mockResolvedValueOnce(jsonResponse({ ...model, provider: router }))
+      .mockResolvedValueOnce(jsonResponse({ available: true, supported: true, free_model_daily_requests: { used: 0, limit: 50, remaining: 50 }, limit_remaining_usd: 10, fetched_at: "2026-09-29T08:00:00Z" }))
+      .mockResolvedValueOnce(jsonResponse({ ...model, provider: router, pricing_mode: "manual" }))
       .mockResolvedValueOnce(jsonResponse([provider, router]))
       .mockResolvedValueOnce(jsonResponse([{ ...model, provider: router }]))
+      .mockResolvedValueOnce(jsonResponse({ available: true, supported: true, free_model_daily_requests: { used: 0, limit: 50, remaining: 50 }, limit_remaining_usd: 10, fetched_at: "2026-09-29T08:00:00Z" }))
 
     render(<ModelsPage />)
     await user.click(await screen.findByRole("button", { name: "Edit Flagship" }))
     expect(screen.getByLabelText("Pricing basis")).toHaveValue("manual")
     await user.selectOptions(screen.getByLabelText("Provider"), "2")
-    expect(screen.getByLabelText("Pricing basis")).toHaveValue("catalog")
+    expect(screen.getByLabelText("Pricing basis")).toHaveValue("automatic")
     expect(screen.getByText(/Changing the provider or model ID resets pricing/)).toBeVisible()
     await user.selectOptions(screen.getByLabelText("Provider"), "1")
     expect(screen.getByLabelText("Pricing basis")).toHaveValue("manual")
@@ -178,8 +186,8 @@ describe("model pricing", () => {
     await user.type(screen.getByLabelText("Output USD / 1M tokens"), "4")
     await user.click(screen.getByRole("button", { name: "Save model" }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5))
-    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toMatchObject({
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(7))
+    expect(JSON.parse(String(fetchMock.mock.calls[3][1]?.body))).toMatchObject({
       provider_id: 2,
       pricing: {
         mode: "manual",

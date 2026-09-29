@@ -80,8 +80,11 @@ protocols. Evaluations support selecting and comparing multiple model IDs.
 After reviewing a configuration, start the evaluation from the same page. The
 server persists its inputs first, processes up to four model requests in the
 background, and opens a progress page that can be refreshed safely. Individual
-request failures remain visible without stopping the rest of the run. Each
-request is attempted once and records a safe error type and message: provider
+request failures remain visible without stopping the rest of the run. OpenRouter
+free-model requests are spaced at least 3.2 seconds apart within this process;
+paid requests use optional per-model request and concurrency limits. OpenRouter
+429 responses honor provider retry hints and use bounded retries. Failures record
+a safe error type and message: provider
 unavailable, invalid API key, rate limit, timeout, malformed response,
 unsupported model, configuration error, provider error, or unexpected error.
 Failed results retain their model and test-case snapshots. This is a local

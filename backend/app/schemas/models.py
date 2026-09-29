@@ -15,7 +15,7 @@ MAX_PARAMETERS_JSON_BYTES = 20_000
 class PricingSelection(BaseModel):
     """Pricing choice supplied when creating or updating a model."""
 
-    mode: Literal["catalog", "manual", "unavailable"] = "catalog"
+    mode: Literal["catalog", "automatic", "manual", "unavailable"] = "catalog"
     input_usd_per_million_tokens: Decimal | None = None
     output_usd_per_million_tokens: Decimal | None = None
 
@@ -44,9 +44,11 @@ class ModelPricingResponse(BaseModel):
     input_usd_per_million_tokens: str
     output_usd_per_million_tokens: str
     currency: Literal["USD"]
-    source: Literal["catalog", "manual"]
+    source: Literal["catalog", "openrouter", "manual"]
     effective_date: date
     source_url: str | None
+    fetched_at: datetime | None = None
+    stale: bool = False
 
 
 def validate_model_parameters(parameters: dict[str, Any]) -> dict[str, Any]:
@@ -74,6 +76,8 @@ class ModelConfigurationBase(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
     active: bool = True
     pricing: PricingSelection = Field(default_factory=PricingSelection)
+    requests_per_minute: int | None = Field(default=None, ge=1, le=100_000)
+    max_concurrent_requests: int | None = Field(default=None, ge=1, le=1_000)
 
     @field_validator("display_name", "model_name")
     @classmethod
@@ -100,6 +104,8 @@ class ModelConfigurationUpdate(BaseModel):
     parameters: dict[str, Any] | None = None
     active: bool | None = None
     pricing: PricingSelection | None = None
+    requests_per_minute: int | None = Field(default=None, ge=1, le=100_000)
+    max_concurrent_requests: int | None = Field(default=None, ge=1, le=1_000)
 
     @model_validator(mode="after")
     def reject_explicit_null_pricing(self) -> Self:
@@ -135,6 +141,10 @@ class ModelConfigurationResponse(BaseModel):
     runnable: bool
     unavailable_reason: str | None
     pricing: ModelPricingResponse | None
+    pricing_mode: Literal["catalog", "automatic", "manual", "unavailable"]
+    pricing_fetched_at: datetime | None
+    requests_per_minute: int | None
+    max_concurrent_requests: int | None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

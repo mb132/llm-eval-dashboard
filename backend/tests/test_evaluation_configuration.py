@@ -135,6 +135,8 @@ def test_options_expose_active_persisted_runnable_models(
             "provider": "ollama",
             "name": "Local model",
             "model_name": "local-model",
+            "pricing_stale": False,
+            "pricing_unavailable": False,
         }
     ]
     assert [item["id"] for item in body["prompt_versions"]] == [

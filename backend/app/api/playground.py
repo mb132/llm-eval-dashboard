@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from ..models import ModelConfiguration
 from ..schemas.playground import PlaygroundRequest, PlaygroundResponse
 from ..services import model_service
+from ..services.openrouter_metadata import refresh_model_price
 from ..services.playground import (
     PlaygroundConfigurationError,
     PlaygroundProviderError,
@@ -27,6 +28,8 @@ async def run_playground_prompt(
         raise HTTPException(status_code=404, detail="Model configuration not found.")
     if not model.active:
         raise HTTPException(status_code=409, detail="The selected model is inactive.")
+
+    await refresh_model_price(session, model)
 
     result = await _generate_or_http_error(model, payload)
     return PlaygroundResponse(

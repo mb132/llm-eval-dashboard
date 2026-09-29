@@ -36,7 +36,10 @@ async def create_model_configuration(
     session: SessionDependency,
 ) -> ModelConfigurationResponse:
     """Create a model configuration."""
-    model = await model_service.create_model(session, payload)
+    try:
+        model = await model_service.create_model(session, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if model is None:
         raise HTTPException(status_code=422, detail="Provider configuration not found.")
     return model_service.to_response(model)

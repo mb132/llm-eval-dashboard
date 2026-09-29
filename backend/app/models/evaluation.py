@@ -118,7 +118,7 @@ class EvaluationResult(Base):
             "(input_price_micro_usd_per_million IS NOT NULL AND "
             "output_price_micro_usd_per_million IS NOT NULL AND "
             "pricing_currency = 'USD' AND "
-            "pricing_source IN ('catalog', 'manual') AND "
+            "pricing_source IN ('catalog', 'manual', 'openrouter') AND "
             "pricing_effective_date IS NOT NULL)",
             name="pricing_complete",
         ),
@@ -172,6 +172,10 @@ class EvaluationResult(Base):
     pricing_source: Mapped[str | None] = mapped_column(String(20))
     pricing_effective_date: Mapped[date | None] = mapped_column(Date)
     pricing_source_url: Mapped[str | None] = mapped_column(String(2000))
+    pricing_fetched_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    pricing_stale: Mapped[bool] = mapped_column(default=False, nullable=False)
+    requests_per_minute: Mapped[int | None] = mapped_column()
+    max_concurrent_requests: Mapped[int | None] = mapped_column()
     estimated_cost_nano_usd: Mapped[int | None] = mapped_column()
     reported_model_name: Mapped[str | None] = mapped_column(String(200))
     prompt_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)

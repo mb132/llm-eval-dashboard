@@ -14,6 +14,7 @@ from ..schemas.providers import (
     validate_provider_settings,
 )
 from .credentials import encrypt_api_key
+from .openrouter_metadata import invalidate_provider_metadata
 
 
 async def list_providers(session: AsyncSession) -> list[ProviderConfiguration]:
@@ -78,6 +79,8 @@ async def update_provider(
             if changes["api_key"]
             else None
         )
+    if "api_key" in changes or "base_url" in changes:
+        invalidate_provider_metadata(provider.id)
     await session.commit()
     persisted = await get_provider(session, provider.id)
     if persisted is None:

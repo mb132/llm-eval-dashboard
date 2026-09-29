@@ -1,6 +1,7 @@
 """Evaluation option discovery and side-effect-free configuration validation."""
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -34,6 +35,8 @@ class ModelOption:
     provider: str
     name: str
     model_name: str
+    pricing_stale: bool = False
+    pricing_unavailable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +101,18 @@ async def get_evaluation_model_options(
             provider=model.provider.kind,
             name=model.display_name,
             model_name=model.model_name,
+            pricing_stale=(
+                model.pricing_source == "openrouter"
+                and model.pricing_fetched_at is not None
+                and model.pricing_fetched_at < datetime.now(UTC) - timedelta(hours=1)
+            ),
+            pricing_unavailable=(
+                model.pricing_mode == "automatic"
+                and (
+                    model.input_price_micro_usd_per_million is None
+                    or model.output_price_micro_usd_per_million is None
+                )
+            ),
         )
         for model in configured_models
         if unavailable_reason(model) is None

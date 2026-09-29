@@ -137,6 +137,8 @@ class ModelOptionResponse(BaseModel):
     provider: str
     name: str
     model_name: str
+    pricing_stale: bool = False
+    pricing_unavailable: bool = False
 
 
 class PromptVersionOptionResponse(BaseModel):
@@ -305,6 +307,8 @@ class PricingSnapshotResponse(BaseModel):
     source: str
     effective_date: date
     source_url: str | None
+    fetched_at: datetime | None = None
+    stale: bool = False
 
 
 class QualityScoreResponse(BaseModel):
@@ -485,6 +489,8 @@ def _options_response(options: EvaluationOptions) -> EvaluationOptionsResponse:
                 provider=item.provider,
                 name=item.name,
                 model_name=item.model_name,
+                pricing_stale=item.pricing_stale,
+                pricing_unavailable=item.pricing_unavailable,
             )
             for item in options.models
         ],
@@ -562,6 +568,8 @@ def _result_response(result: EvaluationResult) -> EvaluationResultResponse:
             source=result.pricing_source,
             effective_date=result.pricing_effective_date,
             source_url=result.pricing_source_url,
+            fetched_at=result.pricing_fetched_at,
+            stale=result.pricing_stale,
         )
     return EvaluationResultResponse(
         id=result.id,

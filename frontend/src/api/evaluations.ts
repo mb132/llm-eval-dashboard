@@ -3,6 +3,8 @@ export type EvaluationModelOption = {
   provider: string
   name: string
   model_name: string
+  pricing_stale?: boolean
+  pricing_unavailable?: boolean
 }
 
 export type EvaluationPromptVersionOption = {
@@ -200,6 +202,8 @@ export type PricingSnapshot = {
   source: string
   effective_date: string
   source_url: string | null
+  fetched_at?: string | null
+  stale?: boolean
 }
 
 export type EvaluationRun = {

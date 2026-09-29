@@ -20,11 +20,15 @@ export type ModelConfiguration = {
   runnable: boolean
   unavailable_reason: string | null
   pricing: ModelPricing | null
+  pricing_mode?: PricingSelection["mode"]
+  pricing_fetched_at?: string | null
+  requests_per_minute?: number | null
+  max_concurrent_requests?: number | null
   created_at: string
 }
 
 export type PricingSelection =
-  | { mode: "catalog" }
+  | { mode: "catalog" | "automatic" }
   | {
       mode: "manual"
       input_usd_per_million_tokens: string
@@ -36,9 +40,11 @@ export type ModelPricing = {
   input_usd_per_million_tokens: string
   output_usd_per_million_tokens: string
   currency: "USD"
-  source: "catalog" | "manual"
+  source: "catalog" | "openrouter" | "manual"
   effective_date: string
   source_url: string | null
+  fetched_at?: string | null
+  stale?: boolean
 }
 
 export type ModelConfigurationInput = {
@@ -48,6 +54,8 @@ export type ModelConfigurationInput = {
   parameters: Record<string, unknown>
   active: boolean
   pricing?: PricingSelection
+  requests_per_minute?: number | null
+  max_concurrent_requests?: number | null
 }
 
 export type ProviderConfigurationSummary = {
