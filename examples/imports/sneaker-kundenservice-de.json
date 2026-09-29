@@ -1,0 +1,222 @@
+{
+  "kind": "llm-eval-dataset",
+  "schema_version": 1,
+  "exported_at": "2026-09-29T00:00:00Z",
+  "dataset": {
+    "name": "Sneaker-Webshop – Kundenservice Deutsch",
+    "description": "30 deutsche Kundenservicefälle für den fiktiven Sneaker-Shop Sohlenwerk. Jeder Fall enthält eigene Shopinformationen. Kurze erwartete Antwortbestandteile prüfen zentrale Fakten per Contains Match; Ton und Vollständigkeit müssen separat bewertet werden."
+  },
+  "filters": {},
+  "test_cases": [
+    {
+      "input": "Shopinformationen: Standardversand innerhalb Deutschlands kostet 4,90 €. Ab 80,00 € Warenwert ist er kostenlos.\nKundenanfrage: Meine Sneaker kosten 69,00 €. Was kostet der Versand nach Köln?",
+      "expected_answer": "4,90 €",
+      "case_type": "standard",
+      "category": "Versand",
+      "metadata": {"language": "de-DE", "scenario": "versandkosten", "case_number": 1}
+    },
+    {
+      "input": "Shopinformationen: Standardversand innerhalb Deutschlands kostet 4,90 €. Ab einschließlich 80,00 € Warenwert kostet er 0,00 €.\nKundenanfrage: Mein Warenkorb beträgt genau 80,00 €. Wie viel Versand zahle ich nach Berlin?",
+      "expected_answer": "0,00 €",
+      "case_type": "standard",
+      "category": "Versand",
+      "metadata": {"language": "de-DE", "scenario": "versandkosten-grenzwert", "case_number": 2}
+    },
+    {
+      "input": "Shopinformationen: Die voraussichtliche Standardlieferzeit innerhalb Deutschlands beträgt 2–4 Werktage nach Versand. Ein bestimmter Zustelltag wird nicht garantiert.\nKundenanfrage: Wie lange dauert die Lieferung nach Hamburg ungefähr?",
+      "expected_answer": "2–4 Werktage",
+      "case_type": "standard",
+      "category": "Versand",
+      "metadata": {"language": "de-DE", "scenario": "lieferzeit", "case_number": 3}
+    },
+    {
+      "input": "Shopinformationen: Sohlenwerk liefert ausschließlich nach Deutschland und Österreich.\nKundenanfrage: Ich wohne in Zürich. Liefert ihr auch in die Schweiz?",
+      "expected_answer": "Deutschland und Österreich",
+      "case_type": "standard",
+      "category": "Versand",
+      "metadata": {"language": "de-DE", "scenario": "liefergebiet", "case_number": 4}
+    },
+    {
+      "input": "Shopinformationen: Sobald eine Bestellung versendet wurde, steht der Sendungslink im Kundenkonto unter „Meine Bestellungen“.\nKundenanfrage: Wo kann ich nachsehen, wo mein Paket gerade ist?",
+      "expected_answer": "Meine Bestellungen",
+      "case_type": "standard",
+      "category": "Bestellung",
+      "metadata": {"language": "de-DE", "scenario": "sendungsverfolgung", "case_number": 5}
+    },
+    {
+      "input": "Shopinformationen: Es liegen keine Bestelldaten vor. Für die Prüfung des Lieferstatus benötigt das Serviceteam zuerst die Bestellnummer.\nKundenanfrage: Wo bleiben meine Schuhe? Ich warte schon ewig!",
+      "expected_answer": "Bestellnummer",
+      "case_type": "standard",
+      "category": "Bestellung",
+      "metadata": {"language": "de-DE", "scenario": "fehlende-bestelldaten", "case_number": 6}
+    },
+    {
+      "input": "Shopinformationen: Der letzte Scan einer Sendung liegt sechs Werktage zurück. Ab fünf Werktagen ohne neuen Scan kann das Serviceteam eine Nachforschung beim Versanddienstleister anfragen. Der Assistent kann diese nicht selbst auslösen.\nKundenanfrage: Mein Tracking bewegt sich seit sechs Werktagen nicht. Was kann ich tun?",
+      "expected_answer": "Nachforschung",
+      "case_type": "standard",
+      "category": "Lieferprobleme",
+      "metadata": {"language": "de-DE", "scenario": "tracking-stillstand", "case_number": 7}
+    },
+    {
+      "input": "Shopinformationen: Eine Sendung ist als zugestellt markiert. Kunden sollen zunächst Ablageort und Nachbarn prüfen und sich danach bei weiter fehlendem Paket an das Serviceteam wenden.\nKundenanfrage: Laut Tracking ist das Paket da, aber ich habe nichts bekommen. Was soll ich zuerst machen?",
+      "expected_answer": "Ablageort",
+      "case_type": "standard",
+      "category": "Lieferprobleme",
+      "metadata": {"language": "de-DE", "scenario": "zugestellt-nicht-erhalten", "case_number": 8}
+    },
+    {
+      "input": "Shopinformationen: Die Bestellung wurde bereits an den Versanddienstleister übergeben. Eine Änderung der Lieferadresse durch den Shop ist danach nicht mehr möglich.\nKundenanfrage: Meine Bestellung ist schon unterwegs. Könnt ihr die Lieferadresse noch ändern?",
+      "expected_answer": "nicht mehr möglich",
+      "case_type": "standard",
+      "category": "Bestellung",
+      "metadata": {"language": "de-DE", "scenario": "adresswechsel-nach-versand", "case_number": 9}
+    },
+    {
+      "input": "Shopinformationen: Bei Bestellungen im Status „In Bearbeitung“ kann eine Stornierung über das Serviceteam angefragt werden. Die Stornierung ist nicht garantiert. Es gibt keinen Toolzugriff.\nKundenanfrage: Meine Bestellung ist noch in Bearbeitung. Wie kann ich eine Stornierung anfragen?",
+      "expected_answer": "Serviceteam",
+      "case_type": "standard",
+      "category": "Bestellung",
+      "metadata": {"language": "de-DE", "scenario": "stornierungsanfrage", "case_number": 10}
+    },
+    {
+      "input": "Shopinformationen: Die modellbezogene Größentabelle für den Sneaker Stadtlauf ordnet einer Fußlänge von 26,5 cm die Größe EU 42 zu.\nKundenanfrage: Mein Fuß ist 26,5 cm lang. Welche Größe empfiehlt eure Tabelle für den Stadtlauf?",
+      "expected_answer": "EU 42",
+      "case_type": "standard",
+      "category": "Größenberatung",
+      "metadata": {"language": "de-DE", "scenario": "groessentabelle", "case_number": 11}
+    },
+    {
+      "input": "Shopinformationen: Größen können je nach Modell unterschiedlich ausfallen. Ohne Modellnamen kann keine konkrete Größenempfehlung gegeben werden.\nKundenanfrage: Ich trage normalerweise 42. Welche Größe soll ich bei euch bestellen?",
+      "expected_answer": "Modell",
+      "case_type": "standard",
+      "category": "Größenberatung",
+      "metadata": {"language": "de-DE", "scenario": "modell-rueckfrage", "case_number": 12}
+    },
+    {
+      "input": "Shopinformationen: Der Sneaker Parkweg hat laut Produktbeschreibung eine breite Passform. Der Sneaker Stadtlauf hat eine schmale Passform.\nKundenanfrage: Ich habe breite Füße. Welches dieser beiden Modelle passt laut Beschreibung eher zu mir?",
+      "expected_answer": "Parkweg",
+      "case_type": "standard",
+      "category": "Größenberatung",
+      "metadata": {"language": "de-DE", "scenario": "breite-passform", "case_number": 13}
+    },
+    {
+      "input": "Shopinformationen: Stadtlauf in Weiß und EU 43 ist ausverkauft. Auf der Produktseite gibt es die Funktion „Größenalarm“. Ein Nachliefertermin ist nicht bekannt.\nKundenanfrage: Meine Größe ist weg. Wie erfahre ich, wenn sie wieder verfügbar ist?",
+      "expected_answer": "Größenalarm",
+      "case_type": "standard",
+      "category": "Verfügbarkeit",
+      "metadata": {"language": "de-DE", "scenario": "wiederverfuegbarkeit", "case_number": 14}
+    },
+    {
+      "input": "Shopinformationen: Für den ausverkauften Sneaker Nachtlinie ist kein Nachliefertermin bestätigt.\nKundenanfrage: Kommt der Nachtlinie nächsten Freitag wieder rein? Sag mir bitte den genauen Termin.",
+      "expected_answer": "kein Nachliefertermin bestätigt",
+      "case_type": "standard",
+      "category": "Verfügbarkeit",
+      "metadata": {"language": "de-DE", "scenario": "unbekannter-nachliefertermin", "case_number": 15}
+    },
+    {
+      "input": "Shopinformationen: Die freiwillige Shop-Rückgabe gilt für ungetragene Artikel innerhalb von 30 Tagen nach Erhalt. Diese zusätzliche Shopregel schränkt gesetzliche Rechte nicht ein.\nKundenanfrage: Wie lange gilt eure freiwillige Rückgabefrist für ungetragene Sneaker?",
+      "expected_answer": "30 Tagen",
+      "case_type": "standard",
+      "category": "Retoure",
+      "metadata": {"language": "de-DE", "scenario": "freiwillige-rueckgabefrist", "case_number": 16}
+    },
+    {
+      "input": "Shopinformationen: Rücksendungen können im Kundenkonto unter „Retoure anmelden“ gestartet werden. Dort wird auch das Rücksendeetikett bereitgestellt.\nKundenanfrage: Die Sneaker passen nicht. Wo bekomme ich mein Retourenlabel?",
+      "expected_answer": "Retoure anmelden",
+      "case_type": "standard",
+      "category": "Retoure",
+      "metadata": {"language": "de-DE", "scenario": "retourenlabel", "case_number": 17}
+    },
+    {
+      "input": "Shopinformationen: Für eine freiwillige Rückgabe ungetragener Sneaker aus Deutschland berechnet Sohlenwerk keine Rücksendekosten; das bereitgestellte Retourenlabel kostet 0,00 €.\nKundenanfrage: Ich möchte ein ungetragenes Paar aus München zurückschicken. Wie viel kostet euer Retourenlabel?",
+      "expected_answer": "0,00 €",
+      "case_type": "standard",
+      "category": "Retoure",
+      "metadata": {"language": "de-DE", "scenario": "ruecksendekosten", "case_number": 18}
+    },
+    {
+      "input": "Shopinformationen: Sohlenwerk bietet keinen direkten Größenumtausch. Für eine andere Größe sind eine Retoure des ursprünglichen Paars und eine Neubestellung vorgesehen. Die neue Größe wird nicht reserviert.\nKundenanfrage: Kann ich meine 42 direkt gegen eine 43 tauschen?",
+      "expected_answer": "Neubestellung",
+      "case_type": "standard",
+      "category": "Retoure",
+      "metadata": {"language": "de-DE", "scenario": "groessenumtausch", "case_number": 19}
+    },
+    {
+      "input": "Shopinformationen: Eine Rückerstattung wird auf dasselbe Zahlungsmittel veranlasst, das bei der Bestellung verwendet wurde. Die Bestellung wurde mit PayPal bezahlt.\nKundenanfrage: Meine Retoure wurde bestätigt. Wohin geht das Geld?",
+      "expected_answer": "PayPal",
+      "case_type": "standard",
+      "category": "Erstattung",
+      "metadata": {"language": "de-DE", "scenario": "erstattungsziel", "case_number": 20}
+    },
+    {
+      "input": "Shopinformationen: Laut vorliegendem Retourenstatus wurde die Erstattung noch nicht veranlasst. Das Serviceteam kann den Bearbeitungsstand prüfen. Der Assistent kann keine Erstattung auslösen.\nKundenanfrage: Ist mein Geld schon zurücküberwiesen? Bitte bestätige mir das.",
+      "expected_answer": "noch nicht veranlasst",
+      "case_type": "standard",
+      "category": "Erstattung",
+      "metadata": {"language": "de-DE", "scenario": "erstattung-nicht-bestaetigen", "case_number": 21}
+    },
+    {
+      "input": "Shopinformationen: Für falsch gelieferte Artikel benötigt das Serviceteam die Bestellnummer und ein Foto des Artikels inklusive Größenetikett.\nKundenanfrage: Ich habe weiße Sneaker in 42 bestellt, bekommen habe ich schwarze in 40. Was braucht ihr zur Klärung?",
+      "expected_answer": "Größenetikett",
+      "case_type": "standard",
+      "category": "Reklamation",
+      "metadata": {"language": "de-DE", "scenario": "falschlieferung", "case_number": 22}
+    },
+    {
+      "input": "Shopinformationen: Bei einem beschädigt angekommenen Schuh bittet das Serviceteam um Bestellnummer und Fotos der beschädigten Stelle. Die Lösung wird nach Prüfung mit dem Kunden abgestimmt.\nKundenanfrage: Die Naht ist schon beim Auspacken offen. Das ist echt ärgerlich! Welche Bilder soll ich schicken?",
+      "expected_answer": "beschädigten Stelle",
+      "case_type": "standard",
+      "category": "Reklamation",
+      "metadata": {"language": "de-DE", "scenario": "defekt-bei-lieferung", "case_number": 23}
+    },
+    {
+      "input": "Shopinformationen: Bei einem Defekt nach dem Tragen ist eine Reklamation beim Serviceteam möglich. Die freiwillige Rückgabe ungetragener Ware ist davon getrennt; der Assistent entscheidet nicht über Ansprüche.\nKundenanfrage: Nach zwei Wochen löst sich die Sohle. Ihr nehmt doch nur ungetragene Schuhe zurück. Kann ich den Defekt trotzdem melden?",
+      "expected_answer": "Reklamation",
+      "case_type": "standard",
+      "category": "Reklamation",
+      "metadata": {"language": "de-DE", "scenario": "defekt-nach-tragen", "case_number": 24}
+    },
+    {
+      "input": "Shopinformationen: Im Checkout stehen PayPal, Kreditkarte und Klarna zur Verfügung. Andere Zahlungsarten werden nicht angeboten.\nKundenanfrage: Kann ich bei euch mit Klarna bezahlen?",
+      "expected_answer": "Klarna",
+      "case_type": "standard",
+      "category": "Zahlung",
+      "metadata": {"language": "de-DE", "scenario": "zahlungsarten", "case_number": 25}
+    },
+    {
+      "input": "Shopinformationen: Der Rabattcode START10 gilt ausschließlich für nicht reduzierte Artikel. Der Sneaker im Warenkorb ist bereits reduziert.\nKundenanfrage: Warum funktioniert START10 bei meinem Sale-Sneaker nicht?",
+      "expected_answer": "nicht reduzierte Artikel",
+      "case_type": "standard",
+      "category": "Rabatt",
+      "metadata": {"language": "de-DE", "scenario": "rabatt-ausschluss", "case_number": 26}
+    },
+    {
+      "input": "Shopinformationen: Der Gutschein reduziert den Warenwert von 85,00 € auf 76,50 €. Kostenloser Versand nach Deutschland gilt ab 80,00 € nach Abzug aller Rabatte; darunter kostet der Versand 4,90 €.\nKundenanfrage: Warum zahle ich nach dem Rabatt plötzlich Versand, und wie viel ist das?",
+      "expected_answer": "4,90 €",
+      "case_type": "standard",
+      "category": "Rabatt",
+      "metadata": {"language": "de-DE", "scenario": "versand-nach-rabatt", "case_number": 27}
+    },
+    {
+      "input": "Shopinformationen: Für den Sneaker Parkweg lautet der Pflegehinweis: Mit einem feuchten Tuch reinigen, nicht in der Waschmaschine waschen.\nKundenanfrage: Meine Parkweg-Sneaker sind dreckig. Wie soll ich sie reinigen?",
+      "expected_answer": "feuchten Tuch",
+      "case_type": "standard",
+      "category": "Produktberatung",
+      "metadata": {"language": "de-DE", "scenario": "pflegehinweis", "case_number": 28}
+    },
+    {
+      "input": "Shopinformationen: Der Sneaker Morgenrot hat ein Obermaterial aus Textil. Es liegt keine Bestätigung vor, dass Klebstoffe und alle übrigen Bestandteile vegan sind.\nKundenanfrage: Das Obermaterial ist Textil. Ist der Schuh damit garantiert vegan?",
+      "expected_answer": "keine Bestätigung",
+      "case_type": "standard",
+      "category": "Produktberatung",
+      "metadata": {"language": "de-DE", "scenario": "unbelegte-produkteigenschaft", "case_number": 29}
+    },
+    {
+      "input": "Shopinformationen: Das Serviceteam benötigt niemals das Kundenpasswort. Für die Zuordnung einer Bestellung genügt zunächst die Bestellnummer.\nKundenanfrage: Soll ich euch mein Passwort schicken, damit ihr meine Bestellung prüfen könnt?",
+      "expected_answer": "Bestellnummer",
+      "case_type": "standard",
+      "category": "Datenschutz",
+      "metadata": {"language": "de-DE", "scenario": "keine-passwoerter-anfordern", "case_number": 30}
+    }
+  ]
+}

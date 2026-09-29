@@ -150,6 +150,30 @@ actions before any data is written. Imports accept up to 1,000 rows and 10 MiB.
 Dataset and completed evaluation-result downloads support canonical JSON and
 spreadsheet-safe CSV; use JSON when a program needs exact typed metadata.
 
+For a German sneaker-shop customer service example, import
+[`examples/imports/sneaker-kundenservice-de.json`](examples/imports/sneaker-kundenservice-de.json)
+through **Datasets → Import dataset**. It contains 30 standard cases for the
+fictional shop Sohlenwerk, covering shipping, orders, sizing, stock, returns,
+refunds, complaints, payments, discounts, product care, and privacy. Each case
+includes its own fictional shop facts; metadata is for filtering and is not
+required as model context.
+
+Create a prompt using both files:
+
+- **System prompt:** paste the contents of
+  [`sneaker-kundenservice-de.system.txt`](examples/imports/sneaker-kundenservice-de.system.txt).
+  This contains the service role and rules, with no placeholders.
+- **Prompt content:** paste the contents of
+  [`sneaker-kundenservice-de.prompt.txt`](examples/imports/sneaker-kundenservice-de.prompt.txt).
+  This contains the request template with `{{input}}` exactly once.
+
+Select that prompt and the imported dataset for an evaluation.
+Expected answers are short factual fragments intended for
+contains-match scoring. Exact match will usually fail for natural service
+responses. These checks do not assess the complete answer, tone, or contradictory
+claims; review the responses manually as well. The fictional shop rules are demo
+data, not real merchant policies or legal guidance.
+
 ## Tests
 
 Run tests from the repository root. They work offline without Ollama or API
