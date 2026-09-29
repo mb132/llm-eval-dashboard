@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { validatePromptContent } from "@/lib/prompt"
+import { validatePromptContent, validateSystemPrompt } from "@/lib/prompt"
 
 export function PromptDetailPage() {
   const { promptId } = useParams()
@@ -27,6 +27,7 @@ export function PromptDetailPage() {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [versionContent, setVersionContent] = useState("")
+  const [versionSystemPrompt, setVersionSystemPrompt] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [pageError, setPageError] = useState<string | null>(null)
   const [metadataError, setMetadataError] = useState<string | null>(null)
@@ -49,6 +50,7 @@ export function PromptDetailPage() {
         setName(result.name)
         setDescription(result.description ?? "")
         setVersionContent(result.versions[0]?.content ?? "")
+        setVersionSystemPrompt(result.versions[0]?.system_prompt ?? "")
       })
       .catch((error: unknown) => {
         if (active) {
@@ -96,11 +98,20 @@ export function PromptDetailPage() {
       setVersionError(contentError)
       return
     }
+    const systemPromptError = validateSystemPrompt(versionSystemPrompt)
+    if (systemPromptError) {
+      setVersionError(systemPromptError)
+      return
+    }
     setIsSavingVersion(true)
     setVersionError(null)
     setStatusMessage("")
     try {
-      const version = await createPromptVersion(promptId, versionContent)
+      const version = await createPromptVersion(
+        promptId,
+        versionContent,
+        versionSystemPrompt || null,
+      )
       setPrompt({
         ...prompt,
         updated_at: version.created_at,
@@ -204,12 +215,27 @@ export function PromptDetailPage() {
           <CardHeader>
             <CardTitle>Create new version</CardTitle>
             <CardDescription>
-              The latest content is prefilled. Saving creates the next version.
+              The latest system prompt and user template are prefilled. Saving creates
+              the next version.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-5" onSubmit={handleVersionSave} noValidate>
-              <Field label="Prompt template" htmlFor="version-content">
+              <Field label="System prompt" htmlFor="version-system-prompt" optional>
+                <Textarea
+                  id="version-system-prompt"
+                  className="min-h-32"
+                  value={versionSystemPrompt}
+                  maxLength={20_000}
+                  aria-describedby="version-system-help"
+                  onChange={(event) => setVersionSystemPrompt(event.target.value)}
+                />
+                <p id="version-system-help" className="text-xs text-muted-foreground">
+                  Sent as system instructions. Leave empty to remove them. Placeholders
+                  are not supported here.
+                </p>
+              </Field>
+              <Field label="User prompt template" htmlFor="version-content">
                 <Textarea
                   id="version-content"
                   className="min-h-48"
@@ -253,6 +279,10 @@ export function PromptDetailPage() {
               </div>
               <pre className="mt-4 overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted p-4 font-mono text-sm leading-relaxed">
                 {version.content}
+              </pre>
+              <h4 className="mt-4 text-sm font-medium">System prompt</h4>
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-lg bg-muted p-4 font-mono text-sm leading-relaxed">
+                {version.system_prompt || "No system prompt"}
               </pre>
             </article>
           ))}

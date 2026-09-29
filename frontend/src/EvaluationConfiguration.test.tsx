@@ -22,6 +22,7 @@ const options: EvaluationOptions = {
       prompt_name: "General knowledge",
       version_number: 2,
       content_preview: "Answer clearly. {{input}}",
+      system_prompt_preview: null,
     },
     {
       id: VERSION_ONE_ID,
@@ -29,6 +30,7 @@ const options: EvaluationOptions = {
       prompt_name: "General knowledge",
       version_number: 1,
       content_preview: "Answer accurately. {{input}}",
+      system_prompt_preview: null,
     },
   ],
   datasets: [

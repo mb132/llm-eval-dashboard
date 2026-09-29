@@ -17,6 +17,7 @@ from ..models.base import utc_now
 MAX_NAME_LENGTH = 120
 MAX_DESCRIPTION_LENGTH = 500
 MAX_CONTENT_LENGTH = 20_000
+MAX_SYSTEM_PROMPT_LENGTH = 20_000
 INPUT_PLACEHOLDER = "{{input}}"
 PLACEHOLDER_PATTERN = re.compile(r"{{[^{}]*}}")
 
@@ -64,6 +65,20 @@ def normalize_description(value: str | None) -> str | None:
     return description
 
 
+def validate_system_prompt(system_prompt: str | None) -> str | None:
+    """Normalize and validate optional static system instructions."""
+    if system_prompt is None or not system_prompt.strip():
+        return None
+    if len(system_prompt) > MAX_SYSTEM_PROMPT_LENGTH:
+        raise PromptValidationError(
+            "System prompt must contain at most "
+            f"{MAX_SYSTEM_PROMPT_LENGTH} characters."
+        )
+    if PLACEHOLDER_PATTERN.search(system_prompt):
+        raise PromptValidationError("System prompt must not contain placeholders.")
+    return system_prompt
+
+
 def validate_prompt_content(content: str) -> str:
     """Validate the single-placeholder prompt template without rewriting it."""
     if not content.strip():
@@ -87,19 +102,27 @@ async def create_prompt(
     *,
     name: str,
     description: str | None,
+    system_prompt: str | None = None,
     content: str,
 ) -> Prompt:
     """Create a prompt and its first immutable version atomically."""
     display_name, name_key = normalize_prompt_name(name)
     clean_description = normalize_description(description)
     validated_content = validate_prompt_content(content)
+    validated_system_prompt = validate_system_prompt(system_prompt)
 
     prompt = Prompt(
         name=display_name,
         name_key=name_key,
         description=clean_description,
     )
-    prompt.versions.append(PromptVersion(version_number=1, content=validated_content))
+    prompt.versions.append(
+        PromptVersion(
+            version_number=1,
+            system_prompt=validated_system_prompt,
+            content=validated_content,
+        )
+    )
 
     try:
         async with session.begin():
@@ -168,9 +191,11 @@ async def create_prompt_version(
     prompt_id: UUID,
     *,
     content: str,
+    system_prompt: str | None = None,
 ) -> PromptVersion:
     """Append the next immutable version to a prompt."""
     validated_content = validate_prompt_content(content)
+    validated_system_prompt = validate_system_prompt(system_prompt)
     try:
         async with session.begin():
             prompt = await session.get(Prompt, prompt_id)
@@ -184,6 +209,7 @@ async def create_prompt_version(
             version = PromptVersion(
                 prompt_id=prompt_id,
                 version_number=(latest_version or 0) + 1,
+                system_prompt=validated_system_prompt,
                 content=validated_content,
             )
             session.add(version)

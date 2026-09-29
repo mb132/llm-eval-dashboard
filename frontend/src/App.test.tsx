@@ -21,6 +21,7 @@ const prompt: PromptDetail = {
       id: VERSION_ID,
       prompt_id: PROMPT_ID,
       version_number: 1,
+      system_prompt: null,
       content: "Answer safely.\n{{input}}",
       created_at: CREATED_AT,
     },
@@ -78,7 +79,7 @@ describe("prompt management", () => {
       screen.getByLabelText(/Description/),
       "Checks instruction handling",
     )
-    fireEvent.change(screen.getByLabelText("Prompt template"), {
+    fireEvent.change(screen.getByLabelText("User prompt template"), {
       target: { value: "Answer safely.\n{{input}}" },
     })
     await user.click(screen.getByRole("button", { name: "Create prompt" }))
@@ -90,6 +91,7 @@ describe("prompt management", () => {
     expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
       name: "Security prompt",
       description: "Checks instruction handling",
+      system_prompt: null,
       content: "Answer safely.\n{{input}}",
     })
   })
@@ -101,7 +103,7 @@ describe("prompt management", () => {
     await screen.findByText("No prompts yet")
 
     await user.type(screen.getByLabelText("Name"), "Invalid template")
-    fireEvent.change(screen.getByLabelText("Prompt template"), {
+    fireEvent.change(screen.getByLabelText("User prompt template"), {
       target: { value: "This template has no input." },
     })
     await user.click(screen.getByRole("button", { name: "Create prompt" }))
@@ -149,6 +151,7 @@ describe("prompt management", () => {
             id: "c84899a0-4956-464e-a364-ec93c7817bf3",
             prompt_id: PROMPT_ID,
             version_number: 2,
+            system_prompt: null,
             content: unsafeContent,
             created_at: "2026-08-22T10:10:00Z",
           },
@@ -161,7 +164,7 @@ describe("prompt management", () => {
     const { container } = renderApp(`/prompts/${PROMPT_ID}`)
     await screen.findByRole("heading", { name: "Security prompt", level: 1 })
 
-    fireEvent.change(screen.getByLabelText("Prompt template"), {
+    fireEvent.change(screen.getByLabelText("User prompt template"), {
       target: { value: unsafeContent },
     })
     await user.click(screen.getByRole("button", { name: "Create version" }))

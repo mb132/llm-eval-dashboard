@@ -2,6 +2,7 @@ export type PromptVersion = {
   id: string
   prompt_id: string
   version_number: number
+  system_prompt: string | null
   content: string
   created_at: string
 }
@@ -27,6 +28,7 @@ export type PromptDetail = {
 export type PromptCreate = {
   name: string
   description: string | null
+  system_prompt: string | null
   content: string
 }
 
@@ -100,9 +102,10 @@ export function updatePrompt(
 export function createPromptVersion(
   promptId: string,
   content: string,
+  system_prompt: string | null,
 ): Promise<PromptVersion> {
   return request<PromptVersion>(
     `/api/prompts/${encodeURIComponent(promptId)}/versions`,
-    jsonRequest("POST", { content }),
+    jsonRequest("POST", { content, system_prompt }),
   )
 }

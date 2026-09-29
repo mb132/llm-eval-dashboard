@@ -264,6 +264,11 @@ export function EvaluationPage() {
                           </span>
                           <span className="mt-1 block break-words text-sm text-muted-foreground">
                             {version.content_preview}
+                            {version.system_prompt_preview && (
+                              <span className="mt-1 block text-xs text-muted-foreground">
+                                System: {version.system_prompt_preview}
+                              </span>
+                            )}
                           </span>
                         </span>
                       </label>

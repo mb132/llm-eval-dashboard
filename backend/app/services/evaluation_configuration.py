@@ -45,6 +45,7 @@ class PromptVersionOption:
     prompt_name: str
     version_number: int
     content_preview: str
+    system_prompt_preview: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +134,11 @@ async def get_evaluation_options(
                 prompt_name=prompt_name,
                 version_number=version.version_number,
                 content_preview=_prompt_preview(version.content),
+                system_prompt_preview=(
+                    _prompt_preview(version.system_prompt)
+                    if version.system_prompt
+                    else None
+                ),
             )
             for version, prompt_name in prompt_rows
         ],

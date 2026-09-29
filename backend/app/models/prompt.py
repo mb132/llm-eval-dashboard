@@ -47,6 +47,7 @@ class PromptVersion(Base):
         index=True,
     )
     version_number: Mapped[int] = mapped_column(nullable=False)
+    system_prompt: Mapped[str | None] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), nullable=False, default=utc_now

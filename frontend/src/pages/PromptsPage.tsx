@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { validatePromptContent } from "@/lib/prompt"
+import { validatePromptContent, validateSystemPrompt } from "@/lib/prompt"
 
 export function PromptsPage() {
   const navigate = useNavigate()
@@ -28,6 +28,7 @@ export function PromptsPage() {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [content, setContent] = useState("")
+  const [systemPrompt, setSystemPrompt] = useState("")
   const [formError, setFormError] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
 
@@ -62,6 +63,11 @@ export function PromptsPage() {
       setFormError(contentError)
       return
     }
+    const systemPromptError = validateSystemPrompt(systemPrompt)
+    if (systemPromptError) {
+      setFormError(systemPromptError)
+      return
+    }
 
     setIsCreating(true)
     setFormError(null)
@@ -70,6 +76,7 @@ export function PromptsPage() {
         name: cleanName,
         description: description.trim() || null,
         content,
+        system_prompt: systemPrompt || null,
       })
       navigate(`/prompts/${prompt.id}`)
     } catch (error) {
@@ -168,7 +175,20 @@ export function PromptsPage() {
                     onChange={(event) => setDescription(event.target.value)}
                   />
                 </FormField>
-                <FormField label="Prompt template" htmlFor="prompt-content">
+                <FormField label="System prompt" htmlFor="prompt-system-prompt" optional>
+                  <Textarea
+                    id="prompt-system-prompt"
+                    value={systemPrompt}
+                    maxLength={20_000}
+                    aria-describedby="prompt-system-help"
+                    onChange={(event) => setSystemPrompt(event.target.value)}
+                  />
+                  <p id="prompt-system-help" className="text-xs text-muted-foreground">
+                    Optional instructions sent separately from the user message. Do not
+                    use placeholders here.
+                  </p>
+                </FormField>
+                <FormField label="User prompt template" htmlFor="prompt-content">
                   <Textarea
                     id="prompt-content"
                     value={content}

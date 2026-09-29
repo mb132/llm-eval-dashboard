@@ -11,6 +11,7 @@ export type EvaluationPromptVersionOption = {
   prompt_name: string
   version_number: number
   content_preview: string
+  system_prompt_preview: string | null
 }
 
 export type EvaluationDatasetOption = {
@@ -246,6 +247,7 @@ export type EvaluationResult = {
   security_status: "passed" | "failed" | "unavailable" | null
   repetition: number
   max_output_tokens: number
+  system_prompt: string | null
   rendered_prompt: string
   test_input: string
   expected_output: string

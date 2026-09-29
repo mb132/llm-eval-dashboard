@@ -151,6 +151,7 @@ class _ExecutionSnapshot:
     result_id: UUID
     provider: str
     model: str
+    system_prompt: str | None
     prompt: str
     max_output_tokens: int
     configuration: "_ModelConfigurationSnapshot | None"
@@ -329,6 +330,7 @@ async def create_evaluation_run(
                         ),
                         repetition=repetition,
                         max_output_tokens=max_output_tokens_by_id[model_id],
+                        system_prompt=version.system_prompt,
                         rendered_prompt=rendered_prompt,
                         test_input=test_case.input,
                         expected_output=test_case.expected_answer,
@@ -702,6 +704,7 @@ async def _start_run(
                 result_id=result.id,
                 provider=result.model_provider,
                 model=result.provider_model_name or result.model_name,
+                system_prompt=result.system_prompt,
                 prompt=result.rendered_prompt,
                 max_output_tokens=result.max_output_tokens,
                 configuration=_ModelConfigurationSnapshot.from_result(
@@ -733,7 +736,7 @@ async def _execute_result(
                 result = await generate_prompt(
                     snapshot.configuration.to_model(),
                     snapshot.prompt,
-                    None,
+                    snapshot.system_prompt,
                     max_output_tokens=snapshot.max_output_tokens,
                     client=client,
                 )

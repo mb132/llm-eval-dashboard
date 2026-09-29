@@ -14,6 +14,7 @@ from ..services.prompts import (
     MAX_CONTENT_LENGTH,
     MAX_DESCRIPTION_LENGTH,
     MAX_NAME_LENGTH,
+    MAX_SYSTEM_PROMPT_LENGTH,
     PromptConflictError,
     PromptNotFoundError,
     PromptValidationError,
@@ -39,6 +40,9 @@ class PromptCreate(StrictRequest):
 
     name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
     description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
+    system_prompt: str | None = Field(
+        default=None, max_length=MAX_SYSTEM_PROMPT_LENGTH
+    )
     content: str = Field(min_length=1, max_length=MAX_CONTENT_LENGTH)
 
 
@@ -61,6 +65,9 @@ class PromptVersionCreate(StrictRequest):
     """Payload for appending an immutable prompt version."""
 
     content: str = Field(min_length=1, max_length=MAX_CONTENT_LENGTH)
+    system_prompt: str | None = Field(
+        default=None, max_length=MAX_SYSTEM_PROMPT_LENGTH
+    )
 
 
 class PromptVersionResponse(BaseModel):
@@ -69,6 +76,7 @@ class PromptVersionResponse(BaseModel):
     id: UUID
     prompt_id: UUID
     version_number: int
+    system_prompt: str | None
     content: str
     created_at: datetime
 
@@ -100,6 +108,7 @@ def _version_response(version: PromptVersion) -> PromptVersionResponse:
         id=version.id,
         prompt_id=version.prompt_id,
         version_number=version.version_number,
+        system_prompt=version.system_prompt,
         content=version.content,
         created_at=version.created_at,
     )

@@ -188,6 +188,7 @@ class EvaluationResult(Base):
     security_passed: Mapped[bool | None] = mapped_column()
     repetition: Mapped[int] = mapped_column(nullable=False)
     max_output_tokens: Mapped[int] = mapped_column(nullable=False)
+    system_prompt: Mapped[str | None] = mapped_column(Text)
     rendered_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     test_input: Mapped[str] = mapped_column(Text, nullable=False)
     expected_output: Mapped[str] = mapped_column(Text, nullable=False)

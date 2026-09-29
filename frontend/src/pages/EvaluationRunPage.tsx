@@ -638,6 +638,10 @@ function ResultCard({ result }: { result: EvaluationResult }) {
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="grid gap-4 md:grid-cols-2">
+          <TextValue
+            label="System prompt"
+            value={result.system_prompt || "No system prompt"}
+          />
           <TextValue label="Rendered prompt" value={result.rendered_prompt} />
           <TextValue label="Input" value={result.test_input} />
           <TextValue

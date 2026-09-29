@@ -147,6 +147,7 @@ class PromptVersionOptionResponse(BaseModel):
     prompt_name: str
     version_number: int
     content_preview: str
+    system_prompt_preview: str | None
 
 
 class DatasetOptionResponse(BaseModel):
@@ -237,6 +238,7 @@ class EvaluationResultResponse(BaseModel):
     security_status: str | None
     repetition: int
     max_output_tokens: int
+    system_prompt: str | None
     rendered_prompt: str
     test_input: str
     expected_output: str
@@ -493,6 +495,7 @@ def _options_response(options: EvaluationOptions) -> EvaluationOptionsResponse:
                 prompt_name=item.prompt_name,
                 version_number=item.version_number,
                 content_preview=item.content_preview,
+                system_prompt_preview=item.system_prompt_preview,
             )
             for item in options.prompt_versions
         ],
@@ -590,6 +593,7 @@ def _result_response(result: EvaluationResult) -> EvaluationResultResponse:
         ),
         repetition=result.repetition,
         max_output_tokens=result.max_output_tokens,
+        system_prompt=result.system_prompt,
         rendered_prompt=result.rendered_prompt,
         test_input=result.test_input,
         expected_output=result.expected_output,
