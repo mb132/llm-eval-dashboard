@@ -23,8 +23,9 @@ import {
   type TestCasePayload,
 } from "@/api/datasets"
 import { TestCaseForm } from "@/components/TestCaseForm"
+import { Alert } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -190,16 +191,13 @@ export function DatasetDetailPage() {
         <Badge variant="outline">
           {dataset.test_cases.length} {dataset.test_cases.length === 1 ? "case" : "cases"}
         </Badge>
-        <div className="flex gap-2"><Link to={`/datasets/import?dataset=${datasetId}`} className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-muted"><FileUp className="size-4" />Import cases</Link><Button type="button" className="h-9 border bg-card px-3 text-foreground hover:bg-muted" onClick={() => void download(`/api/datasets/${datasetId}/export?format=json`, `${dataset.name}.json`)}><Download className="mr-1 size-4" />Export JSON</Button><Button type="button" className="h-9 border bg-card px-3 text-foreground hover:bg-muted" onClick={() => void download(`/api/datasets/${datasetId}/export?format=csv`, `${dataset.name}.csv`)}><Download className="mr-1 size-4" />CSV</Button></div>
+        <div className="flex gap-2"><Link to={`/datasets/import?dataset=${datasetId}`} className={buttonVariants({ variant: "outline", size: "sm" })}><FileUp className="size-4" />Import cases</Link><Button type="button" variant="outline" size="sm" onClick={() => void download(`/api/datasets/${datasetId}/export?format=json`, `${dataset.name}.json`)}><Download className="size-4" />Export JSON</Button><Button type="button" variant="outline" size="sm" onClick={() => void download(`/api/datasets/${datasetId}/export?format=csv`, `${dataset.name}.csv`)}><Download className="size-4" />CSV</Button></div>
       </header>
 
       {statusMessage && (
-        <p
-          className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800"
-          role="status"
-        >
+        <Alert variant="success" role="status">
           {statusMessage}
-        </p>
+        </Alert>
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -250,9 +248,9 @@ export function DatasetDetailPage() {
               {metadataError && <ErrorMessage message={metadataError} />}
               <Button type="submit" disabled={isSavingMetadata}>
                 {isSavingMetadata ? (
-                  <LoaderCircle className="mr-2 size-4 animate-spin" />
+                  <LoaderCircle className="size-4 animate-spin" />
                 ) : (
-                  <Save className="mr-2 size-4" />
+                  <Save className="size-4" />
                 )}
                 {isSavingMetadata ? "Saving…" : "Save details"}
               </Button>
@@ -392,18 +390,18 @@ function TestCaseCard({
         </div>
         {!isEditing && (
           <div className="flex flex-wrap gap-2">
-            <Button type="button" className="h-9 border bg-card px-3 text-foreground hover:bg-muted" onClick={() => { setIsEditing(true); setError(null) }}>
-              <Edit3 className="mr-1 size-4" />Edit
+            <Button type="button" variant="outline" size="sm" onClick={() => { setIsEditing(true); setError(null) }}>
+              <Edit3 className="size-4" />Edit
             </Button>
             {!confirmDelete ? (
-              <Button type="button" className="h-9 border bg-card px-3 text-foreground hover:bg-muted" disabled={!canDelete} title={canDelete ? undefined : "A dataset must keep at least one test case."} onClick={() => setConfirmDelete(true)}>
-                <Trash2 className="mr-1 size-4" />Delete
+              <Button type="button" variant="outline" size="sm" disabled={!canDelete} title={canDelete ? undefined : "A dataset must keep at least one test case."} onClick={() => setConfirmDelete(true)}>
+                <Trash2 className="size-4" />Delete
               </Button>
             ) : (
-              <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 p-1">
-                <span className="px-1 text-xs text-red-800">Delete this case?</span>
-                <Button type="button" className="h-8 px-3" disabled={isDeleting} onClick={handleDelete}>{isDeleting ? "Deleting…" : "Confirm"}</Button>
-                <Button type="button" className="h-8 border bg-card px-3 text-foreground hover:bg-muted" disabled={isDeleting} onClick={() => setConfirmDelete(false)}>Cancel</Button>
+              <div className="flex items-center gap-2 rounded-md border border-destructive-border bg-destructive-soft p-1">
+                <span className="px-1 text-xs text-destructive-soft-foreground">Delete this case?</span>
+                <Button type="button" size="xs" disabled={isDeleting} onClick={handleDelete}>{isDeleting ? "Deleting…" : "Confirm"}</Button>
+                <Button type="button" variant="outline" size="xs" disabled={isDeleting} onClick={() => setConfirmDelete(false)}>Cancel</Button>
               </div>
             )}
             {!canDelete && (
@@ -464,9 +462,9 @@ function securityTypeLabel(value: string) {
 }
 
 function BackLink() {
-  return <Link to="/datasets" className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"><ArrowLeft className="size-4" />Back to datasets</Link>
+  return <Link to="/datasets" className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"><ArrowLeft className="size-4" />Back to datasets</Link>
 }
 
 function ErrorMessage({ message }: { message: string }) {
-  return <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert"><AlertCircle className="mt-0.5 size-4 shrink-0" /><p>{message}</p></div>
+  return <Alert variant="destructive" className="flex gap-2" role="alert"><AlertCircle className="mt-0.5 size-4 shrink-0" /><p>{message}</p></Alert>
 }

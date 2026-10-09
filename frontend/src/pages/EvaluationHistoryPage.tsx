@@ -18,8 +18,9 @@ import {
   type EvaluationRunPage,
 } from "@/api/evaluations"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 20
 
@@ -70,10 +71,10 @@ export function EvaluationHistoryPage() {
   return (
     <div className="space-y-8">
       <header className="relative overflow-hidden rounded-2xl border bg-card px-6 py-8 sm:px-8">
-        <div className="absolute right-0 top-0 h-full w-1/2 bg-gradient-to-l from-cyan-50 to-transparent" />
+        <div className="absolute right-0 top-0 h-full w-1/2 bg-gradient-to-l from-brand-soft to-transparent" />
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-700">
+            <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-brand-strong">
               <History className="size-4" /> Persistent archive
             </p>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -86,7 +87,7 @@ export function EvaluationHistoryPage() {
           </div>
           <Link
             to="/evaluations/new"
-            className="inline-flex h-10 w-fit items-center gap-2 rounded-md bg-foreground px-4 text-sm font-medium text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+            className={cn(buttonVariants(), "w-fit")}
           >
             <FlaskConical className="size-4" /> New evaluation
           </Link>
@@ -100,10 +101,10 @@ export function EvaluationHistoryPage() {
         </p>
       )}
       {error && (
-        <div className="flex flex-wrap items-center gap-3 text-sm text-red-700" role="alert">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-destructive" role="alert">
           <span>{error}</span>
           <Button type="button" onClick={() => setRetryKey((value) => value + 1)}>
-            <RefreshCw className="mr-2 size-4" /> Retry
+            <RefreshCw className="size-4" /> Retry
           </Button>
         </div>
       )}
@@ -117,7 +118,7 @@ export function EvaluationHistoryPage() {
 
       {page && runs.length < page.total && (
         <Button type="button" disabled={isLoadingMore} onClick={loadMore}>
-          {isLoadingMore && <LoaderCircle className="mr-2 size-4 animate-spin" />}
+          {isLoadingMore && <LoaderCircle className="size-4 animate-spin" />}
           {isLoadingMore ? "Loading…" : "Load older evaluations"}
         </Button>
       )}
@@ -153,7 +154,7 @@ function HistoryItem({ run }: { run: EvaluationRunHistory }) {
         </span>
       </div>
       <span className="absolute left-3 top-7 z-10 flex size-5 items-center justify-center rounded-full border bg-background sm:left-[6.85rem]">
-        <span className="size-2 rounded-full bg-cyan-600" />
+        <span className="size-2 rounded-full bg-brand" />
       </span>
       <Card className="gap-4 py-5 transition-shadow hover:shadow-md">
         <CardContent className="space-y-5 px-5">
@@ -192,14 +193,14 @@ function HistoryItem({ run }: { run: EvaluationRunHistory }) {
               {(run.status === "completed" || run.status === "failed") && (
                 <Link
                   to={`/?run=${run.id}`}
-                  className="inline-flex h-9 items-center rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
                 >
                   Compare models
                 </Link>
               )}
               <Link
                 to={`/evaluations/${run.id}`}
-                className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-sm font-medium text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+                className={buttonVariants({ size: "sm" })}
               >
                 Open results <ArrowRight className="size-4" />
               </Link>

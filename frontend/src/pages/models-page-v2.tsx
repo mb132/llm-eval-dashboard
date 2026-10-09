@@ -21,6 +21,7 @@ import {
   getOpenRouterLimits,
   refreshOpenRouterPrices,
 } from "@/api/providers"
+import { Alert } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -132,12 +133,9 @@ export function ModelsPage() {
         </p>
       </div>
       {error && (
-        <p
-          className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-          role="alert"
-        >
+        <Alert variant="destructive" role="alert">
           {error}
-        </p>
+        </Alert>
       )}
 
       <ProviderList
@@ -234,7 +232,7 @@ function ProviderList({
             </p>
           </div>
           <Button disabled={isLoading} onClick={onAdd}>
-            <Plus className="mr-2 size-4" /> Add provider
+            <Plus className="size-4" /> Add provider
           </Button>
         </div>
         {isLoading ? (
@@ -263,15 +261,16 @@ function ProviderList({
                   </div>}
                 </div>
                 <div className="flex items-center">
-                {provider.kind === "openrouter" && <Button className="bg-transparent p-2 text-foreground hover:bg-muted" onClick={() => void onRefreshPrices(provider.id)} aria-label={`Refresh prices for ${provider.display_name}`}>
+                {provider.kind === "openrouter" && <Button variant="ghost" size="icon" onClick={() => void onRefreshPrices(provider.id)} aria-label={`Refresh prices for ${provider.display_name}`}>
                   <RefreshCw className="size-4" />
                 </Button>}
                 <Button
-                  className="bg-transparent p-2 text-foreground hover:bg-muted"
+                  variant="ghost"
+                  size="icon"
                   aria-label={`Remove ${provider.display_name}`}
                   onClick={() => void onRemove(provider)}
                 >
-                  <Trash2 className="size-4 text-red-600" />
+                  <Trash2 className="size-4 text-destructive" />
                 </Button>
                 </div>
               </div>
@@ -309,7 +308,7 @@ function ModelList({
             </p>
           </div>
           <Button disabled={isLoading || !providersAvailable} onClick={onAdd}>
-            <Plus className="mr-2 size-4" /> Add model
+            <Plus className="size-4" /> Add model
           </Button>
         </div>
         {isLoading ? (
@@ -339,18 +338,20 @@ function ModelList({
               </div>
               <div className="flex">
                 <Button
-                  className="bg-transparent p-2 text-foreground hover:bg-muted"
+                  variant="ghost"
+                  size="icon"
                   aria-label={`Edit ${model.display_name}`}
                   onClick={() => onEdit(model)}
                 >
                   <Pencil className="size-4" />
                 </Button>
                 <Button
-                  className="bg-transparent p-2 text-foreground hover:bg-muted"
+                  variant="ghost"
+                  size="icon"
                   aria-label={`Remove ${model.display_name}`}
                   onClick={() => void onRemove(model)}
                 >
-                  <Trash2 className="size-4 text-red-600" />
+                  <Trash2 className="size-4 text-destructive" />
                 </Button>
               </div>
             </div>
@@ -395,7 +396,7 @@ function ProviderForm({ onSaved }: { onSaved: () => void }) {
 
   return (
     <form className="space-y-4" onSubmit={submit}>
-      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <label className="block text-sm">
         Display name
         <Input
@@ -439,7 +440,7 @@ function ProviderForm({ onSaved }: { onSaved: () => void }) {
         </label>
       )}
       <Button type="submit">
-        <KeyRound className="mr-2 size-4" /> Save provider
+        <KeyRound className="size-4" /> Save provider
       </Button>
     </form>
   )
@@ -520,7 +521,7 @@ function ModelForm({
 
   return (
     <form className="space-y-4" onSubmit={submit}>
-      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <label className="block text-sm">
         Display name
         <Input required value={name} onChange={(event) => setName(event.target.value)} />

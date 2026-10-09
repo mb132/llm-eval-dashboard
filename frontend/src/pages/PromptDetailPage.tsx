@@ -8,6 +8,7 @@ import {
   updatePrompt,
   type PromptDetail,
 } from "@/api/prompts"
+import { Alert } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -162,12 +163,9 @@ export function PromptDetailPage() {
       </header>
 
       {statusMessage && (
-        <p
-          className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800"
-          role="status"
-        >
+        <Alert variant="success" role="status">
           {statusMessage}
-        </p>
+        </Alert>
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -201,9 +199,9 @@ export function PromptDetailPage() {
               {metadataError && <ErrorMessage message={metadataError} />}
               <Button type="submit" disabled={isSavingMetadata}>
                 {isSavingMetadata ? (
-                  <LoaderCircle className="mr-2 size-4 animate-spin" />
+                  <LoaderCircle className="size-4 animate-spin" />
                 ) : (
-                  <Save className="mr-2 size-4" />
+                  <Save className="size-4" />
                 )}
                 {isSavingMetadata ? "Saving…" : "Save details"}
               </Button>
@@ -253,9 +251,9 @@ export function PromptDetailPage() {
               {versionError && <ErrorMessage message={versionError} />}
               <Button type="submit" disabled={isSavingVersion}>
                 {isSavingVersion ? (
-                  <LoaderCircle className="mr-2 size-4 animate-spin" />
+                  <LoaderCircle className="size-4 animate-spin" />
                 ) : (
-                  <Save className="mr-2 size-4" />
+                  <Save className="size-4" />
                 )}
                 {isSavingVersion ? "Creating…" : "Create version"}
               </Button>
@@ -296,7 +294,7 @@ function BackLink() {
   return (
     <Link
       to="/prompts"
-      className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+      className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
     >
       <ArrowLeft className="size-4" />
       Back to prompts
@@ -328,13 +326,10 @@ function Field({
 
 function ErrorMessage({ message }: { message: string }) {
   return (
-    <div
-      className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-      role="alert"
-    >
+    <Alert variant="destructive" className="flex gap-2" role="alert">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
       <p>{message}</p>
-    </div>
+    </Alert>
   )
 }
 

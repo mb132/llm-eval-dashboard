@@ -35,8 +35,9 @@ import {
   type TokenAggregate,
 } from "@/api/evaluations"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select } from "@/components/ui/select"
 import {
   Table,
   TableBody,
@@ -45,6 +46,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { cn } from "@/lib/utils"
 
 const RUN_PAGE_SIZE = 20
 const DASHBOARD_VIEWS = ["overview", "models", "prompts"] as const
@@ -173,11 +175,11 @@ export function DashboardPage() {
   return (
     <div className="space-y-8">
       <section className="relative overflow-hidden rounded-2xl border bg-card px-6 py-8 text-card-foreground shadow-sm sm:px-8">
-        <div className="absolute -right-20 -top-24 size-72 rounded-full bg-cyan-200/40 blur-3xl" />
-        <div className="absolute -bottom-28 left-1/3 size-64 rounded-full bg-indigo-200/40 blur-3xl" />
+        <div className="absolute -right-20 -top-24 size-72 rounded-full bg-brand-glow/40 blur-3xl" />
+        <div className="absolute -bottom-28 left-1/3 size-64 rounded-full bg-brand-glow-alt/40 blur-3xl" />
         <div className="relative grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
-            <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-700">
+            <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-brand-strong">
               <Gauge className="size-4" /> Evaluation cockpit
             </p>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -196,14 +198,14 @@ export function DashboardPage() {
             {selectedRun && (
               <Link
                 to={`/evaluations/${selectedRun.id}`}
-                className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-sm font-medium text-background hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+                className={buttonVariants({ size: "sm" })}
               >
                 Full run details <ArrowRight className="size-4" />
               </Link>
             )}
             <Link
               to="/evaluations/history"
-              className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
             >
               <History className="size-4" /> History
             </Link>
@@ -216,11 +218,11 @@ export function DashboardPage() {
           <label htmlFor="dashboard-run" className="text-sm font-medium">
             Evaluation run
           </label>
-          <select
+          <Select
             id="dashboard-run"
             value={selectedRunId ?? ""}
             onChange={(event) => setSearchParams({ run: event.target.value })}
-            className="h-10 min-w-72 rounded-md border bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+            className="min-w-72 bg-card"
           >
             {selectedRun && !terminalRuns.some((run) => run.id === selectedRun.id) && (
               <option value={selectedRun.id}>{runOption(selectedRun)}</option>
@@ -230,7 +232,7 @@ export function DashboardPage() {
                 {runOption(run)}
               </option>
             ))}
-          </select>
+          </Select>
           {runPage && runPage.items.length < runPage.total && (
             <button
               type="button"
@@ -273,7 +275,7 @@ export function DashboardPage() {
               aria-controls={`dashboard-panel-${item}`}
               tabIndex={view === item ? 0 : -1}
               onClick={() => setView(item)}
-              className={`rounded-md px-4 py-2 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 ${
+              className={`rounded-md px-4 py-2 text-sm font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 ${
                 view === item
                   ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -514,7 +516,7 @@ function ComparisonProfilePlot({ rows, entity }: {
 }) {
   const [highlighted, setHighlighted] = useState<string | null>(null)
   const axes = profileAxes(rows)
-  const colors = ["#0891b2", "#4f46e5", "#c026d3", "#ea580c", "#16a34a"]
+  const colors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"]
   const x = (index: number) => 55 + index * 130
   const y = (value: number) => 32 + (1 - value) * 150
 
@@ -576,7 +578,7 @@ function ComparisonProfilePlot({ rows, entity }: {
               type="button"
               aria-pressed={highlighted === row.id}
               onClick={() => setHighlighted((current) => current === row.id ? null : row.id)}
-              className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+              className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
             >
               <span className="size-2 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
               {row.name}
@@ -622,7 +624,7 @@ function ScoreCell({ primary, secondary, unavailable, best = false }: {
       </div>
       {primary !== null && (
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
-          <div className="h-full rounded-full bg-cyan-600" style={{ width: `${primary * 100}%` }} />
+          <div className="h-full rounded-full bg-brand" style={{ width: `${primary * 100}%` }} />
         </div>
       )}
       <p className="text-xs text-muted-foreground">
@@ -669,7 +671,7 @@ function ActiveRun({ run }: { run: EvaluationRun }) {
   return (
     <Card><CardContent className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div><p className="font-medium">This evaluation is still running.</p><p className="mt-1 text-sm text-muted-foreground">Open the run page for live progress and individual results.</p></div>
-      <Link to={`/evaluations/${run.id}`} className="inline-flex h-10 items-center gap-2 rounded-md bg-foreground px-4 text-sm font-medium text-background">View progress <ArrowRight className="size-4" /></Link>
+      <Link to={`/evaluations/${run.id}`} className={buttonVariants()}>View progress <ArrowRight className="size-4" /></Link>
     </CardContent></Card>
   )
 }
@@ -682,7 +684,7 @@ function EmptyDashboard({ activeRuns }: { activeRuns: EvaluationRun[] }) {
           <span className="mx-auto mb-5 flex size-12 items-center justify-center rounded-xl bg-muted"><BarChart3 className="size-6" /></span>
           <h1 className="text-2xl font-semibold">No completed evaluations yet</h1>
           <p className="mt-2 text-sm text-muted-foreground">Run an evaluation to compare quality, performance, cost, and security in one place.</p>
-          <Link to="/evaluations/new" className="mt-6 inline-flex h-10 items-center gap-2 rounded-md bg-foreground px-4 text-sm font-medium text-background">New evaluation <FlaskConical className="size-4" /></Link>
+          <Link to="/evaluations/new" className={cn(buttonVariants(), "mt-6")}>New evaluation <FlaskConical className="size-4" /></Link>
         </CardContent>
       </Card>
       {activeRuns.length > 0 && <ActiveRuns runs={activeRuns} />}
@@ -695,11 +697,11 @@ function LoadingState({ label, compact = false }: { label: string; compact?: boo
 }
 
 function InlineError({ message }: { message: string }) {
-  return <p className="flex items-center gap-2 text-sm text-red-700"><AlertCircle className="size-4" /> {message}</p>
+  return <p className="flex items-center gap-2 text-sm text-destructive"><AlertCircle className="size-4" /> {message}</p>
 }
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return <Card><CardContent className="flex flex-col items-start gap-4"><InlineError message={message} /><Button type="button" onClick={onRetry}><RefreshCw className="mr-2 size-4" />Retry</Button></CardContent></Card>
+  return <Card><CardContent className="flex flex-col items-start gap-4"><InlineError message={message} /><Button type="button" onClick={onRetry}><RefreshCw className="size-4" />Retry</Button></CardContent></Card>
 }
 
 function RunStatus({ status }: { status: EvaluationRun["status"] }) {

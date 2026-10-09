@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 
 import { listModels, type ModelConfiguration, type Provider } from "@/api/models"
 import { runPlaygroundPrompt, type PlaygroundResult } from "@/api/playground"
+import { Alert } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -171,9 +172,9 @@ export function PlaygroundPage() {
               </p>
               <Button type="submit" disabled={running || selectionUnavailable || !prompt.trim()}>
                 {running ? (
-                  <><LoaderCircle className="mr-2 size-4 animate-spin" />Running…</>
+                  <><LoaderCircle className="size-4 animate-spin" />Running…</>
                 ) : (
-                  <><Play className="mr-2 size-4" />Run prompt</>
+                  <><Play className="size-4" />Run prompt</>
                 )}
               </Button>
             </div>
@@ -241,10 +242,10 @@ function Notice({ children }: { children: React.ReactNode }) {
 
 function ErrorBanner({ message }: { message: string }) {
   return (
-    <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert">
+    <Alert variant="destructive" className="flex gap-3 p-4" role="alert">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
       <p>{message}</p>
-    </div>
+    </Alert>
   )
 }
 

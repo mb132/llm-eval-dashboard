@@ -9,7 +9,9 @@ import {
   type TestCasePayload,
 } from "@/api/datasets"
 import { TestCaseForm } from "@/components/TestCaseForm"
+import { Alert } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
+import { buttonVariants } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -80,7 +82,7 @@ export function DatasetsPage() {
             Build traceable collections of inputs and expected answers for repeatable evaluations.
           </p>
         </div>
-        <Link to="/datasets/import" className="inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-muted"><FileUp className="size-4" />Import dataset</Link>
+        <Link to="/datasets/import" className={buttonVariants({ variant: "outline" })}><FileUp className="size-4" />Import dataset</Link>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,0.9fr)]">
@@ -110,7 +112,7 @@ export function DatasetsPage() {
                 <li key={dataset.id}>
                   <Link
                     to={`/datasets/${dataset.id}`}
-                    className="block rounded-xl border bg-card p-5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+                    className="block rounded-xl border bg-card p-5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div>
@@ -192,10 +194,10 @@ export function DatasetsPage() {
 
 function ErrorMessage({ message }: { message: string }) {
   return (
-    <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+    <Alert variant="destructive" className="flex gap-2" role="alert">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
       <p>{message}</p>
-    </div>
+    </Alert>
   )
 }
 

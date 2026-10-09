@@ -25,7 +25,7 @@ function Dialog({ open, onOpenChange, title, description, children }: DialogProp
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onOpenChange(false)
@@ -35,7 +35,7 @@ function Dialog({ open, onOpenChange, title, description, children }: DialogProp
         role="dialog"
         aria-modal="true"
         aria-labelledby="dialog-title"
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border bg-card p-6 shadow-xl"
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border bg-popover p-6 text-popover-foreground shadow-xl"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -43,7 +43,8 @@ function Dialog({ open, onOpenChange, title, description, children }: DialogProp
             {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
           </div>
           <Button
-            className="size-9 bg-transparent p-0 text-foreground hover:bg-muted"
+            variant="ghost"
+            size="icon"
             aria-label="Close"
             onClick={() => onOpenChange(false)}
           >

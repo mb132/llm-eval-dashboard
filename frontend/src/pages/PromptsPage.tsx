@@ -7,6 +7,7 @@ import {
   listPrompts,
   type PromptSummary,
 } from "@/api/prompts"
+import { Alert } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -124,7 +125,7 @@ export function PromptsPage() {
                 <li key={prompt.id}>
                   <Link
                     to={`/prompts/${prompt.id}`}
-                    className="block rounded-xl border bg-card p-5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+                    className="block rounded-xl border bg-card p-5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div>
@@ -206,9 +207,9 @@ export function PromptsPage() {
                 {formError && <ErrorMessage message={formError} />}
                 <Button type="submit" disabled={isCreating} className="w-full">
                   {isCreating ? (
-                    <LoaderCircle className="mr-2 size-4 animate-spin" />
+                    <LoaderCircle className="size-4 animate-spin" />
                   ) : (
-                    <Plus className="mr-2 size-4" />
+                    <Plus className="size-4" />
                   )}
                   {isCreating ? "Creating…" : "Create prompt"}
                 </Button>
@@ -245,13 +246,10 @@ function FormField({
 
 function ErrorMessage({ message }: { message: string }) {
   return (
-    <div
-      className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-      role="alert"
-    >
+    <Alert variant="destructive" className="flex gap-2" role="alert">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
       <p>{message}</p>
-    </div>
+    </Alert>
   )
 }
 

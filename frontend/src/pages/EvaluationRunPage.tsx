@@ -31,8 +31,9 @@ import {
   type EvaluationRun,
   type EvaluationRunStatus,
 } from "@/api/evaluations"
+import { Alert } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -168,7 +169,7 @@ export function EvaluationRunPage() {
         <BackLink />
         <ErrorMessage message={error} />
         <Button type="button" onClick={() => setRetryKey((value) => value + 1)}>
-          <RefreshCw className="mr-2 size-4" />
+          <RefreshCw className="size-4" />
           Retry
         </Button>
       </div>
@@ -198,7 +199,7 @@ export function EvaluationRunPage() {
           <div className="flex flex-wrap items-center gap-3">
             <Link
               to="/evaluations/history"
-              className="inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
             >
               <History className="size-4" /> History
             </Link>
@@ -225,7 +226,7 @@ export function EvaluationRunPage() {
               <span>{progress}%</span>
             </div>
             <progress
-              className="h-3 w-full overflow-hidden rounded-full accent-foreground"
+              className="h-3 w-full overflow-hidden rounded-full accent-primary"
               value={evaluation.completed_requests}
               max={evaluation.total_requests}
               aria-label="Evaluation progress"
@@ -258,7 +259,7 @@ export function EvaluationRunPage() {
             Raw outputs, execution metrics, and quality scores are shown together.
           </p>
         </div>
-        {!isActive && <div className="mt-3 flex gap-2"><Button type="button" className="h-9 border bg-card px-3 text-foreground hover:bg-muted" onClick={() => void download(`/api/evaluations/${evaluationId}/export?${searchParams.toString()}&format=json`, "evaluation-results.json")}><Download className="mr-1 size-4" />Export JSON</Button><Button type="button" className="h-9 border bg-card px-3 text-foreground hover:bg-muted" onClick={() => void download(`/api/evaluations/${evaluationId}/export?${searchParams.toString()}&format=csv`, "evaluation-results.csv")}><Download className="mr-1 size-4" />CSV</Button></div>}
+        {!isActive && <div className="mt-3 flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void download(`/api/evaluations/${evaluationId}/export?${searchParams.toString()}&format=json`, "evaluation-results.json")}><Download className="size-4" />Export JSON</Button><Button type="button" variant="outline" size="sm" onClick={() => void download(`/api/evaluations/${evaluationId}/export?${searchParams.toString()}&format=csv`, "evaluation-results.csv")}><Download className="size-4" />CSV</Button></div>}
         <ResultFiltersPanel
           options={filterOptions}
           filters={filters}
@@ -273,7 +274,7 @@ export function EvaluationRunPage() {
               type="button"
               onClick={() => setRetryKey((value) => value + 1)}
             >
-              <RefreshCw className="mr-2 size-4" />
+              <RefreshCw className="size-4" />
               Retry
             </Button>
           </div>
@@ -290,7 +291,7 @@ export function EvaluationRunPage() {
         )}
         {results.length < resultTotal && !isActive && (
           <Button type="button" disabled={isLoadingMore} onClick={loadMore}>
-            {isLoadingMore && <LoaderCircle className="mr-2 size-4 animate-spin" />}
+            {isLoadingMore && <LoaderCircle className="size-4 animate-spin" />}
             {isLoadingMore ? "Loading…" : "Load more results"}
           </Button>
         )}
@@ -367,7 +368,7 @@ function ResultFiltersPanel({
           {hasFilters && (
             <Button
               type="button"
-              className="border bg-background text-foreground hover:bg-muted"
+              variant="outline"
               onClick={() => onChange({})}
             >
               Clear filters
@@ -496,7 +497,7 @@ function BackLink() {
   return (
     <Link
       to="/"
-      className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+      className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
     >
       <ArrowLeft className="size-4" />
       Dashboard
@@ -762,14 +763,14 @@ function resultOutcomeLabel(result: EvaluationResult): string {
 function ResultStatus({ status }: { status: EvaluationResult["status"] }) {
   if (status === "succeeded") {
     return (
-      <span className="inline-flex items-center gap-1 text-sm font-medium text-green-800">
+      <span className="inline-flex items-center gap-1 text-sm font-medium text-success">
         <CheckCircle2 className="size-4" /> Success
       </span>
     )
   }
   if (status === "failed") {
     return (
-      <span className="inline-flex items-center gap-1 text-sm font-medium text-red-800">
+      <span className="inline-flex items-center gap-1 text-sm font-medium text-destructive-soft-foreground">
         <XCircle className="size-4" /> Failed
       </span>
     )
@@ -792,10 +793,10 @@ function SecurityStatus({
   status: EvaluationResult["security_status"]
 }) {
   if (status === "passed") {
-    return <span className="font-medium text-green-800">Passed</span>
+    return <span className="font-medium text-success">Passed</span>
   }
   if (status === "failed") {
-    return <span className="font-medium text-red-800">Failed</span>
+    return <span className="font-medium text-destructive-soft-foreground">Failed</span>
   }
   return <span className="font-medium text-muted-foreground">Unavailable</span>
 }
@@ -816,7 +817,7 @@ function TextValue({
       </h4>
       <p
         className={`mt-2 whitespace-pre-wrap break-words rounded-lg p-3 text-sm ${
-          emphasized ? "bg-green-50" : "bg-muted"
+          emphasized ? "bg-success-soft" : "bg-muted"
         }`}
       >
         {value}
@@ -910,10 +911,7 @@ function ErrorMessage({
   errorCode?: string | null
 }) {
   return (
-    <div
-      className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-      role="alert"
-    >
+    <Alert variant="destructive" className="flex gap-2" role="alert">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
       <p>
         {errorCode !== undefined && (
@@ -921,7 +919,7 @@ function ErrorMessage({
         )}
         {message}
       </p>
-    </div>
+    </Alert>
   )
 }
 

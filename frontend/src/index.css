@@ -5,11 +5,42 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-soft-foreground: var(--destructive-soft-foreground);
+  --color-destructive-border: var(--destructive-border);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-success-soft-foreground: var(--success-soft-foreground);
+  --color-success-border: var(--success-border);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-glow: var(--brand-glow);
+  --color-brand-glow-alt: var(--brand-glow-alt);
   --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -20,15 +51,58 @@
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   color-scheme: light;
   --radius: 0.75rem;
+
+  /* Surfaces */
   --background: oklch(0.985 0.002 247.839);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
+  --overlay: oklch(0 0 0 / 0.45);
+
+  /* Actions */
+  --primary: oklch(0.145 0 0);
+  --primary-foreground: oklch(0.985 0.002 247.839);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.145 0 0);
+
+  /* Lines and focus */
   --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.145 0 0);
+
+  /* Status: strong colors for text/icons, soft colors for notice surfaces */
+  --destructive: oklch(50.5% 0.213 27.518);
+  --destructive-foreground: oklch(0.985 0 0);
+  --destructive-soft: oklch(97.1% 0.013 17.38);
+  --destructive-soft-foreground: oklch(44.4% 0.177 26.899);
+  --destructive-border: oklch(88.5% 0.062 18.334);
+  --success: oklch(44.8% 0.119 151.328);
+  --success-foreground: oklch(0.985 0 0);
+  --success-soft: oklch(98.2% 0.018 155.826);
+  --success-soft-foreground: oklch(44.8% 0.119 151.328);
+  --success-border: oklch(92.5% 0.084 155.995);
+  --warning: oklch(55.5% 0.163 48.998);
+  --warning-foreground: oklch(0.985 0 0);
+
+  /* Brand accents used by hero sections and progress indicators */
+  --brand: oklch(60.9% 0.126 221.723);
+  --brand-strong: oklch(52% 0.105 223.128);
+  --brand-soft: oklch(98.4% 0.019 200.873);
+  --brand-glow: oklch(91.7% 0.08 205.041);
+  --brand-glow-alt: oklch(87% 0.065 274.039);
+
+  /* Categorical series for comparison charts */
+  --chart-1: oklch(60.9% 0.126 221.723);
+  --chart-2: oklch(51.1% 0.262 276.966);
+  --chart-3: oklch(59.1% 0.293 322.896);
+  --chart-4: oklch(64.6% 0.222 41.116);
+  --chart-5: oklch(62.7% 0.194 149.214);
 }
 
 @layer base {

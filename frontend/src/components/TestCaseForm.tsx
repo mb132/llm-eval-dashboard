@@ -8,8 +8,10 @@ import type {
   TestCasePayload,
   TestCaseType,
 } from "@/api/datasets"
+import { Alert } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 
 type MetadataKind = "text" | "number" | "boolean" | "null"
@@ -103,24 +105,22 @@ export function TestCaseForm({
         />
       </Field>
       <Field label="Test case type" htmlFor={`${fieldIdPrefix}-case-type`}>
-        <select
+        <Select
           id={`${fieldIdPrefix}-case-type`}
-          className="h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
           value={caseType}
           onChange={(event) => setCaseType(event.target.value as TestCaseType)}
         >
           <option value="standard">Standard</option>
           <option value="security">Security</option>
-        </select>
+        </Select>
       </Field>
       {caseType === "security" && (
         <Field
           label="Security test type"
           htmlFor={`${fieldIdPrefix}-security-test-type`}
         >
-          <select
+          <Select
             id={`${fieldIdPrefix}-security-test-type`}
-            className="h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
             value={securityTestType}
             onChange={(event) =>
               setSecurityTestType(event.target.value as SecurityTestType)
@@ -129,7 +129,7 @@ export function TestCaseForm({
             <option value="direct_prompt_injection">Direct prompt injection</option>
             <option value="instruction_override">Instruction override</option>
             <option value="system_prompt_extraction">System prompt extraction</option>
-          </select>
+          </Select>
         </Field>
       )}
       <Field
@@ -170,7 +170,9 @@ export function TestCaseForm({
           </p>
           <Button
             type="button"
-            className="h-9 shrink-0 whitespace-nowrap border bg-card px-3 text-foreground hover:bg-muted"
+            variant="outline"
+            size="sm"
+            className="shrink-0 whitespace-nowrap"
             disabled={metadata.length >= 20}
             onClick={() =>
               setMetadata((rows) => [
@@ -179,7 +181,7 @@ export function TestCaseForm({
               ])
             }
           >
-            <Plus className="mr-1 size-4" />
+            <Plus className="size-4" />
             Add field
           </Button>
         </div>
@@ -195,9 +197,8 @@ export function TestCaseForm({
               placeholder="difficulty"
               onChange={(event) => updateRow(row.id, { key: event.target.value })}
             />
-            <select
+            <Select
               aria-label={`Metadata type ${index + 1}`}
-              className="h-10 rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
               value={row.kind}
               onChange={(event) =>
                 updateRow(row.id, {
@@ -210,17 +211,16 @@ export function TestCaseForm({
               <option value="number">Number</option>
               <option value="boolean">Boolean</option>
               <option value="null">Null</option>
-            </select>
+            </Select>
             {row.kind === "boolean" ? (
-              <select
+              <Select
                 aria-label={`Metadata value ${index + 1}`}
-                className="h-10 rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
                 value={row.value || "true"}
                 onChange={(event) => updateRow(row.id, { value: event.target.value })}
               >
                 <option value="true">True</option>
                 <option value="false">False</option>
-              </select>
+              </Select>
             ) : (
               <Input
                 aria-label={`Metadata value ${index + 1}`}
@@ -234,7 +234,9 @@ export function TestCaseForm({
             )}
             <Button
               type="button"
-              className="size-10 border bg-card p-0 text-foreground hover:bg-muted"
+              variant="outline"
+              size="icon"
+              className="size-10"
               aria-label={`Remove metadata field ${index + 1}`}
               onClick={() =>
                 setMetadata((rows) =>
@@ -249,26 +251,23 @@ export function TestCaseForm({
       </fieldset>
 
       {(validationError || error) && (
-        <p
-          className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-          role="alert"
-        >
+        <Alert variant="destructive" role="alert">
           {validationError ?? error}
-        </p>
+        </Alert>
       )}
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={busy || disabled}>
           {busy ? (
-            <LoaderCircle className="mr-2 size-4 animate-spin" />
+            <LoaderCircle className="size-4 animate-spin" />
           ) : (
-            <Save className="mr-2 size-4" />
+            <Save className="size-4" />
           )}
           {busy ? "Saving…" : submitLabel}
         </Button>
         {onCancel && (
           <Button
             type="button"
-            className="border bg-card text-foreground hover:bg-muted"
+            variant="outline"
             disabled={busy}
             onClick={onCancel}
           >

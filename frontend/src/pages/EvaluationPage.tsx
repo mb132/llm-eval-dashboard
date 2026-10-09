@@ -16,6 +16,7 @@ import {
   type EvaluationOptions,
   type EvaluationPreview,
 } from "@/api/evaluations"
+import { Alert } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -197,11 +198,11 @@ export function EvaluationPage() {
                 {options.models.map((model) => (
                   <label
                     key={model.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors has-[:checked]:border-foreground has-[:checked]:bg-muted"
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors has-[:checked]:border-primary has-[:checked]:bg-muted"
                   >
                     <input
                       type="checkbox"
-                      className="mt-1 size-4 accent-foreground"
+                      className="mt-1 size-4 accent-primary"
                       checked={selectedModelIds.includes(model.id)}
                       onChange={() =>
                         toggleSelection(
@@ -213,8 +214,8 @@ export function EvaluationPage() {
                     />
                     <span>
                       <span className="block font-medium">{model.name}</span>
-                      {model.pricing_stale && <span className="block text-xs text-amber-700">OpenRouter price is stale; this run will use the last saved estimate.</span>}
-                      {model.pricing_unavailable && <span className="block text-xs text-amber-700">OpenRouter price is unavailable; this run will have no cost estimate unless pricing refresh succeeds.</span>}
+                      {model.pricing_stale && <span className="block text-xs text-warning">OpenRouter price is stale; this run will use the last saved estimate.</span>}
+                      {model.pricing_unavailable && <span className="block text-xs text-warning">OpenRouter price is unavailable; this run will have no cost estimate unless pricing refresh succeeds.</span>}
                       <span className="mt-1 block font-mono text-xs text-muted-foreground">
                         {model.model_name}
                       </span>
@@ -246,11 +247,11 @@ export function EvaluationPage() {
                     {versions.map((version) => (
                       <label
                         key={version.id}
-                        className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors has-[:checked]:border-foreground has-[:checked]:bg-muted"
+                        className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors has-[:checked]:border-primary has-[:checked]:bg-muted"
                       >
                         <input
                           type="checkbox"
-                          className="mt-1 size-4 accent-foreground"
+                          className="mt-1 size-4 accent-primary"
                           checked={selectedPromptVersionIds.includes(version.id)}
                           onChange={() =>
                             toggleSelection(
@@ -297,12 +298,12 @@ export function EvaluationPage() {
                 {options.datasets.map((dataset) => (
                   <label
                     key={dataset.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors has-[:checked]:border-foreground has-[:checked]:bg-muted"
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors has-[:checked]:border-primary has-[:checked]:bg-muted"
                   >
                     <input
                       type="radio"
                       name="dataset"
-                      className="mt-1 size-4 accent-foreground"
+                      className="mt-1 size-4 accent-primary"
                       checked={selectedDatasetId === dataset.id}
                       onChange={() =>
                         selectionChanged(() => setSelectedDatasetId(dataset.id))
@@ -368,9 +369,9 @@ export function EvaluationPage() {
                 disabled={!configurationIsComplete || isPreviewing}
               >
                 {isPreviewing ? (
-                  <LoaderCircle className="mr-2 size-4 animate-spin" />
+                  <LoaderCircle className="size-4 animate-spin" />
                 ) : (
-                  <RefreshCw className="mr-2 size-4" />
+                  <RefreshCw className="size-4" />
                 )}
                 {isPreviewing ? "Reviewing…" : "Review configuration"}
               </Button>
@@ -448,7 +449,7 @@ function LinkText({ to, children }: { to: string; children: React.ReactNode }) {
   return (
     <Link
       to={to}
-      className="font-medium text-foreground underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30"
+      className="font-medium text-foreground underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
     >
       {children}
     </Link>
@@ -494,9 +495,9 @@ function PreviewCard({
   onStart: () => void
 }) {
   return (
-    <Card className="border-green-200 bg-green-50 shadow-sm" aria-live="polite">
+    <Card className="border-success-border bg-success-soft shadow-sm" aria-live="polite">
       <CardHeader>
-        <div className="flex items-center gap-2 text-green-800">
+        <div className="flex items-center gap-2 text-success">
           <CheckCircle2 className="size-5" />
           <CardTitle>
             <h2>Configuration valid</h2>
@@ -511,7 +512,7 @@ function PreviewCard({
           />
           <PreviewValue label="Test cases" value={preview.test_case_count} />
           <PreviewValue label="Repetitions" value={preview.repetitions} />
-          <div className="flex items-center justify-between border-t border-green-200 pt-3 text-base font-semibold">
+          <div className="flex items-center justify-between border-t border-success-border pt-3 text-base font-semibold">
             <dt className="flex items-center gap-2">
               <Layers3 className="size-4" />
               Total model requests
@@ -526,7 +527,7 @@ function PreviewCard({
           disabled={isStarting}
           onClick={onStart}
         >
-          {isStarting && <LoaderCircle className="mr-2 size-4 animate-spin" />}
+          {isStarting && <LoaderCircle className="size-4 animate-spin" />}
           {isStarting ? "Starting evaluation…" : "Start evaluation"}
         </Button>
       </CardContent>
@@ -545,12 +546,9 @@ function PreviewValue({ label, value }: { label: string; value: number }) {
 
 function ErrorMessage({ message }: { message: string }) {
   return (
-    <div
-      className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-      role="alert"
-    >
+    <Alert variant="destructive" className="flex gap-2" role="alert">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
       <p>{message}</p>
-    </div>
+    </Alert>
   )
 }
