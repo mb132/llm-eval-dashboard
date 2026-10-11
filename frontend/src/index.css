@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme inline {
+  /* Existing semantic colours (unchanged names) */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -41,68 +42,185 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+
+  /* New design-system colours */
+  --color-canvas: var(--le-bg-canvas);
+  --color-chrome: var(--le-bg-chrome);
+  --color-panel: var(--le-bg-panel);
+  --color-inset: var(--le-bg-inset);
+  --color-hover: var(--le-bg-hover);
+  --color-selected: var(--le-bg-selected);
+  --color-control: var(--le-bg-control);
+  --color-line: var(--le-border-default);
+  --color-line-strong: var(--le-border-strong);
+  --color-fg: var(--le-text-primary);
+  --color-fg-secondary: var(--le-text-secondary);
+  --color-fg-muted: var(--le-text-muted);
+  --color-link: var(--le-accent-text);
+  --color-primary-muted: var(--le-accent-muted);
+  --color-warning-soft: var(--le-warning-bg);
+  --color-info: var(--le-info);
+  --color-info-soft: var(--le-info-bg);
+  --color-series-1: var(--le-series-1);
+  --color-series-2: var(--le-series-2);
+  --color-series-3: var(--le-series-3);
+  --color-series-4: var(--le-series-4);
+
+  /* Radius */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* Fonts */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Type scale */
+  --text-title: 20px;
+  --text-title--line-height: 28px;
+  --text-title--font-weight: 600;
+  --text-title--letter-spacing: -0.01em;
+  --text-section: 13px;
+  --text-section--line-height: 18px;
+  --text-section--font-weight: 600;
+  --text-body: 13px;
+  --text-body--line-height: 20px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-overline: 11px;
+  --text-overline--line-height: 16px;
+  --text-overline--font-weight: 500;
+  --text-overline--letter-spacing: 0.08em;
+  --text-metric-lg: 28px;
+  --text-metric-lg--line-height: 34px;
+  --text-metric-lg--font-weight: 500;
+  --text-metric-lg--letter-spacing: -0.02em;
+  --text-metric-md: 18px;
+  --text-metric-md--line-height: 24px;
+  --text-metric-md--font-weight: 500;
+  --text-data: 12px;
+  --text-data--line-height: 16px;
+  --text-data-sm: 11px;
+  --text-data-sm--line-height: 16px;
 }
 
+/* Dark is the default theme. */
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color-scheme: dark;
+  --le-bg-canvas: #0d1015;
+  --le-bg-chrome: #10141b;
+  --le-bg-panel: #141821;
+  --le-bg-inset: #0f131a;
+  --le-bg-hover: #1c2230;
+  --le-bg-selected: #1a2030;
+  --le-bg-control: #161b25;
+  --le-border-default: #222836;
+  --le-border-strong: #2a3142;
+  --le-text-primary: #e6e8ee;
+  --le-text-secondary: #a9b0c2;
+  --le-text-muted: #8b93a7;
+  --le-accent: #f5b544;
+  --le-accent-on: #0d1015;
+  --le-accent-text: #f5b544;
+  --le-accent-muted: #a87a26;
+  --le-success: #6fdb9a;
+  --le-success-bg: #13261c;
+  --le-danger: #ff8a9b;
+  --le-danger-bg: #3a1e26;
+  --le-warning: #f5b544;
+  --le-warning-bg: #33270f;
+  --le-info: #5cc8e8;
+  --le-info-bg: #10283a;
+  --le-series-1: #b39dff;
+  --le-series-2: #5cc8e8;
+  --le-series-3: #ff7a90;
+  --le-series-4: #e8e2c9;
+  --le-overlay: rgba(5, 7, 10, 0.72);
+}
+
+:root[data-theme="light"] {
   color-scheme: light;
-  --radius: 0.75rem;
+  --le-bg-canvas: #f6f7f9;
+  --le-bg-chrome: #ffffff;
+  --le-bg-panel: #ffffff;
+  --le-bg-inset: #f6f7f9;
+  --le-bg-hover: #eef1f5;
+  --le-bg-selected: #eaf0ff;
+  --le-bg-control: #ffffff;
+  --le-border-default: #e4e7ec;
+  --le-border-strong: #d5dae1;
+  --le-text-primary: #16181d;
+  --le-text-secondary: #3d4350;
+  --le-text-muted: #5b6270;
+  --le-accent: #2346d8;
+  --le-accent-on: #ffffff;
+  --le-accent-text: #2346d8;
+  --le-accent-muted: #9db0f0;
+  --le-success: #0f6e4a;
+  --le-success-bg: #e3f4ea;
+  --le-danger: #9e2a23;
+  --le-danger-bg: #fdecea;
+  --le-warning: #a3520f;
+  --le-warning-bg: #fff3dc;
+  --le-info: #1f6fb2;
+  --le-info-bg: #e3f0fa;
+  --le-series-1: #2346d8;
+  --le-series-2: #d9661f;
+  --le-series-3: #0f7f73;
+  --le-series-4: #8c3b9e;
+  --le-overlay: rgba(22, 24, 29, 0.45);
+}
 
-  /* Surfaces */
-  --background: oklch(0.985 0.002 247.839);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --overlay: oklch(0 0 0 / 0.45);
+/* Semantic layer: theme-independent, points at the raw tokens. */
+:root {
+  --radius: 8px;
 
-  /* Actions */
-  --primary: oklch(0.145 0 0);
-  --primary-foreground: oklch(0.985 0.002 247.839);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.145 0 0);
+  --background: var(--le-bg-canvas);
+  --foreground: var(--le-text-primary);
+  --card: var(--le-bg-panel);
+  --card-foreground: var(--le-text-primary);
+  --popover: var(--le-bg-panel);
+  --popover-foreground: var(--le-text-primary);
+  --muted: var(--le-bg-inset);
+  --muted-foreground: var(--le-text-muted);
+  --overlay: var(--le-overlay);
 
-  /* Lines and focus */
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.145 0 0);
+  --primary: var(--le-accent);
+  --primary-foreground: var(--le-accent-on);
+  --secondary: var(--le-bg-control);
+  --secondary-foreground: var(--le-text-secondary);
+  --accent: var(--le-bg-hover);
+  --accent-foreground: var(--le-text-primary);
 
-  /* Status: strong colors for text/icons, soft colors for notice surfaces */
-  --destructive: oklch(50.5% 0.213 27.518);
-  --destructive-foreground: oklch(0.985 0 0);
-  --destructive-soft: oklch(97.1% 0.013 17.38);
-  --destructive-soft-foreground: oklch(44.4% 0.177 26.899);
-  --destructive-border: oklch(88.5% 0.062 18.334);
-  --success: oklch(44.8% 0.119 151.328);
-  --success-foreground: oklch(0.985 0 0);
-  --success-soft: oklch(98.2% 0.018 155.826);
-  --success-soft-foreground: oklch(44.8% 0.119 151.328);
-  --success-border: oklch(92.5% 0.084 155.995);
-  --warning: oklch(55.5% 0.163 48.998);
-  --warning-foreground: oklch(0.985 0 0);
+  --border: var(--le-border-default);
+  --input: var(--le-border-strong);
+  --ring: var(--le-accent);
 
-  /* Brand accents used by hero sections and progress indicators */
-  --brand: oklch(60.9% 0.126 221.723);
-  --brand-strong: oklch(52% 0.105 223.128);
-  --brand-soft: oklch(98.4% 0.019 200.873);
-  --brand-glow: oklch(91.7% 0.08 205.041);
-  --brand-glow-alt: oklch(87% 0.065 274.039);
+  --destructive: var(--le-danger);
+  --destructive-foreground: var(--le-bg-canvas);
+  --destructive-soft: var(--le-danger-bg);
+  --destructive-soft-foreground: var(--le-danger);
+  --destructive-border: color-mix(in oklab, var(--le-danger) 40%, transparent);
+  --success: var(--le-success);
+  --success-foreground: var(--le-bg-canvas);
+  --success-soft: var(--le-success-bg);
+  --success-soft-foreground: var(--le-success);
+  --success-border: color-mix(in oklab, var(--le-success) 40%, transparent);
+  --warning: var(--le-warning);
+  --warning-foreground: var(--le-bg-canvas);
 
-  /* Categorical series for comparison charts */
-  --chart-1: oklch(60.9% 0.126 221.723);
-  --chart-2: oklch(51.1% 0.262 276.966);
-  --chart-3: oklch(59.1% 0.293 322.896);
-  --chart-4: oklch(64.6% 0.222 41.116);
-  --chart-5: oklch(62.7% 0.194 149.214);
+  --brand: var(--le-accent);
+  --brand-strong: var(--le-accent-text);
+  --brand-soft: var(--le-bg-selected);
+  --brand-glow: transparent;
+  --brand-glow-alt: transparent;
+
+  --chart-1: var(--le-series-1);
+  --chart-2: var(--le-series-2);
+  --chart-3: var(--le-series-3);
+  --chart-4: var(--le-series-4);
+  --chart-5: var(--le-accent-muted);
 }
 
 @layer base {
@@ -111,6 +229,16 @@
   }
 
   body {
-    @apply m-0 bg-background text-foreground antialiased;
+    @apply m-0 bg-background font-sans text-body text-foreground antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--muted-foreground);
   }
 }
