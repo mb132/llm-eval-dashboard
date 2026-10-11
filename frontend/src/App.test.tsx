@@ -143,6 +143,12 @@ describe("prompt management", () => {
   it("creates an immutable version and renders model content as text", async () => {
     const user = userEvent.setup()
     const unsafeContent = '<img src="x" onerror="alert(1)">\n{{input}}'
+    const originalSystem = "Original system instructions"
+    const editedSystem = "Antworte freundlich.\n\nSprich die Kundschaft mit „du“ an."
+    const originalPrompt = {
+      ...prompt,
+      versions: [{ ...prompt.versions[0], system_prompt: originalSystem }],
+    }
     fetchMock.mockImplementation(async (input, init) => {
       const path = String(input)
       if (path.endsWith("/versions") && init?.method === "POST") {
@@ -151,25 +157,39 @@ describe("prompt management", () => {
             id: "c84899a0-4956-464e-a364-ec93c7817bf3",
             prompt_id: PROMPT_ID,
             version_number: 2,
-            system_prompt: null,
+            system_prompt: editedSystem,
             content: unsafeContent,
             created_at: "2026-08-22T10:10:00Z",
           },
           201,
         )
       }
-      if (path === `/api/prompts/${PROMPT_ID}`) return jsonResponse(prompt)
+      if (path === `/api/prompts/${PROMPT_ID}`) return jsonResponse(originalPrompt)
       throw new Error(`Unexpected request: ${path}`)
     })
     const { container } = renderApp(`/prompts/${PROMPT_ID}`)
     await screen.findByRole("heading", { name: "Security prompt", level: 1 })
 
+    expect(screen.getByLabelText(/System prompt/)).toHaveValue(originalSystem)
+    expect(screen.getByLabelText("User prompt template")).toHaveValue(prompt.versions[0].content)
+    fireEvent.change(screen.getByLabelText(/System prompt/), {
+      target: { value: editedSystem },
+    })
     fireEvent.change(screen.getByLabelText("User prompt template"), {
       target: { value: unsafeContent },
     })
     await user.click(screen.getByRole("button", { name: "Create version" }))
 
     expect(await screen.findByText("Version 2")).toBeInTheDocument()
+    const versionCall = fetchMock.mock.calls.find(([input, init]) =>
+      String(input).endsWith("/versions") && init?.method === "POST",
+    )
+    expect(JSON.parse(String(versionCall?.[1]?.body))).toEqual({
+      content: unsafeContent,
+      system_prompt: editedSystem,
+    })
+    expect([...container.querySelectorAll("pre")].map((element) => element.textContent))
+      .toEqual([unsafeContent, editedSystem, prompt.versions[0].content, originalSystem])
     expect(
       [...container.querySelectorAll("pre")].some(
         (element) => element.textContent === unsafeContent,
