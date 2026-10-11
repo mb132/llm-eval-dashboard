@@ -30,7 +30,7 @@ function Field({ label, htmlFor, optional, hint, error, children, className, ...
     <div data-slot="field" className={cn("flex flex-col gap-1.5", className)} {...props}>
       <label htmlFor={controlId} className="flex items-center justify-between gap-3 text-caption font-medium">
         <span>{label}</span>
-        {optional && <span className="font-normal text-fg-muted">Optional</span>}
+        {optional && <> <span className="font-normal text-fg-muted">Optional</span></>}
       </label>
       {cloneElement(children, {
         id: controlId,
