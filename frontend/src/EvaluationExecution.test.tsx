@@ -627,37 +627,42 @@ describe("evaluation execution", () => {
     expect(screen.queryByText(result.test_input)).not.toBeInTheDocument()
   })
 
-  it("starts the reviewed configuration and opens its persistent run", async () => {
+  it("starts the latest validated configuration and opens its persistent run", async () => {
     const user = userEvent.setup()
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(options))
-      .mockResolvedValueOnce(jsonResponse(preview))
-      .mockResolvedValueOnce(
-        jsonResponse({ ...completedRun, status: "pending" }, 202),
-      )
-      .mockResolvedValueOnce(jsonResponse(completedRun))
-      .mockResolvedValueOnce(
-        jsonResponse({ items: [result], total: 1, offset: 0, limit: 50 }),
-      )
-      .mockResolvedValueOnce(jsonResponse(qualitySummary))
-      .mockResolvedValueOnce(jsonResponse(securitySummary))
-      .mockResolvedValueOnce(jsonResponse(performanceSummary))
-      .mockResolvedValueOnce(jsonResponse(costSummary))
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === "/api/models") return jsonResponse([])
+      if (url === "/api/evaluations/options") return jsonResponse(options)
+      if (url === "/api/evaluations/preview") return jsonResponse(preview)
+      if (url === "/api/evaluations" && init?.method === "POST") {
+        return jsonResponse({ ...completedRun, status: "pending" }, 202)
+      }
+      if (url === `/api/evaluations/${RUN_ID}`) return jsonResponse(completedRun)
+      if (url.startsWith(`/api/evaluations/${RUN_ID}/results?`)) {
+        return jsonResponse({ items: [result], total: 1, offset: 0, limit: 50 })
+      }
+      if (url === `/api/evaluations/${RUN_ID}/quality-summary`) return jsonResponse(qualitySummary)
+      if (url === `/api/evaluations/${RUN_ID}/security-summary`) return jsonResponse(securitySummary)
+      if (url === `/api/evaluations/${RUN_ID}/performance-summary`) return jsonResponse(performanceSummary)
+      if (url === `/api/evaluations/${RUN_ID}/cost-summary`) return jsonResponse(costSummary)
+      throw new Error(`Unexpected request: ${url}`)
+    })
     renderApp("/evaluations/new")
 
-    await user.click(await screen.findByRole("checkbox", { name: /Version 1/ }))
+    await user.click(await screen.findByRole("checkbox", { name: /Knowledge prompt.*v1/ }))
     await user.click(screen.getByRole("radio", { name: /Knowledge set/ }))
-    await user.click(
-      screen.getByRole("button", { name: "Review configuration" }),
-    )
-    await user.click(
-      await screen.findByRole("button", { name: "Start evaluation" }),
-    )
+    const startButton = screen.getByRole("button", { name: "Start evaluation" })
+    await waitFor(() => expect(startButton).toBeEnabled())
+    await user.click(startButton)
 
     expect(
       await screen.findByRole("heading", { name: "Knowledge set evaluation" }),
     ).toBeInTheDocument()
-    const startCall = fetchMock.mock.calls[2]
+    const startCalls = fetchMock.mock.calls.filter(([input, init]) =>
+      String(input) === "/api/evaluations" && init?.method === "POST",
+    )
+    expect(startCalls).toHaveLength(1)
+    const startCall = startCalls[0]
     expect(String(startCall[0])).toBe("/api/evaluations")
     expect(JSON.parse(String(startCall[1]?.body))).toEqual({
       model_ids: ["1"],
