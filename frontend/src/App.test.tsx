@@ -82,7 +82,7 @@ describe("prompt management", () => {
       screen.getByLabelText(/Description/),
       "Checks instruction handling",
     )
-    fireEvent.change(screen.getByLabelText("User prompt template"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "User template" }), {
       target: { value: "Answer safely.\n{{input}}" },
     })
     await user.click(screen.getByRole("button", { name: "Create prompt" }))
@@ -106,12 +106,14 @@ describe("prompt management", () => {
     await screen.findByText("No prompts yet")
 
     await user.type(screen.getByLabelText("Name"), "Invalid template")
-    fireEvent.change(screen.getByLabelText("User prompt template"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "User template" }), {
       target: { value: "This template has no input." },
     })
     await user.click(screen.getByRole("button", { name: "Create prompt" }))
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Include {{input}} exactly once")
+    expect(screen.getByRole("button", { name: "Create prompt" })).toBeDisabled()
+    expect(screen.getByRole("status")).toHaveTextContent("Add {{input}} where each test case input goes.")
+    expect(screen.getByRole("textbox", { name: "User template" })).toHaveAttribute("aria-invalid", "true")
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -139,7 +141,7 @@ describe("prompt management", () => {
         level: 1,
       }),
     ).toBeInTheDocument()
-    expect(screen.getByRole("status")).toHaveTextContent("Prompt details saved.")
+    expect(await screen.findByText("Prompt details saved.")).toHaveAttribute("role", "status")
     expect(screen.getByText("1 version")).toBeInTheDocument()
   })
 
@@ -173,17 +175,18 @@ describe("prompt management", () => {
     const { container } = renderApp(`/prompts/${PROMPT_ID}`)
     await screen.findByRole("heading", { name: "Security prompt", level: 1 })
 
-    expect(screen.getByLabelText(/System prompt/)).toHaveValue(originalSystem)
-    expect(screen.getByLabelText("User prompt template")).toHaveValue(prompt.versions[0].content)
-    fireEvent.change(screen.getByLabelText(/System prompt/), {
+    expect(screen.getByRole("textbox", { name: /System prompt/ })).toHaveValue(originalSystem)
+    expect(screen.getByRole("textbox", { name: "User template" })).toHaveValue(prompt.versions[0].content)
+    fireEvent.change(screen.getByRole("textbox", { name: /System prompt/ }), {
       target: { value: editedSystem },
     })
-    fireEvent.change(screen.getByLabelText("User prompt template"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "User template" }), {
       target: { value: unsafeContent },
     })
-    await user.click(screen.getByRole("button", { name: "Create version" }))
+    await user.click(screen.getByRole("button", { name: "Create version 2" }))
 
-    expect(await screen.findByText("Version 2")).toBeInTheDocument()
+    expect(await screen.findByText("Version 2 created.")).toHaveAttribute("role", "status")
+    expect(screen.getByRole("tab", { name: "v2 latest" })).toHaveAttribute("aria-selected", "true")
     const versionCall = fetchMock.mock.calls.find(([input, init]) =>
       String(input).endsWith("/versions") && init?.method === "POST",
     )
@@ -191,14 +194,12 @@ describe("prompt management", () => {
       content: unsafeContent,
       system_prompt: editedSystem,
     })
-    expect([...container.querySelectorAll("pre")].map((element) => element.textContent))
-      .toEqual([unsafeContent, editedSystem, prompt.versions[0].content, originalSystem])
-    expect(
-      [...container.querySelectorAll("pre")].some(
-        (element) => element.textContent === unsafeContent,
-      ),
-    ).toBe(true)
+    expect(screen.getByRole("region", { name: "User template" }).textContent).toBe(`User template${unsafeContent}`)
+    expect(screen.getByRole("region", { name: "System prompt" }).textContent).toBe(`System prompt${editedSystem}`)
     expect(container.querySelector("img")).toBeNull()
+    await user.click(screen.getByRole("tab", { name: "v1" }))
+    expect(screen.getByRole("region", { name: "User template" }).textContent).toBe(`User template${prompt.versions[0].content}`)
+    expect(screen.getByRole("region", { name: "System prompt" }).textContent).toBe(`System prompt${originalSystem}`)
   })
 
   it("shows sanitized API errors", async () => {
