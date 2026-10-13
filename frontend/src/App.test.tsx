@@ -312,4 +312,24 @@ describe("app shell", () => {
     renderShell("/prompts", <PageFrame breadcrumbs={[{ label: "Prompts" }]}><PageHeader title="Prompts" /></PageFrame>)
     expect(screen.getByRole("link", { name: "New" })).toHaveAttribute("href", "/prompts#create-prompt")
   })
+
+  it.each(["prompt", "dataset"])("scrolls New to the %s form and focuses its first field while retaining query parameters", async (kind) => {
+    const user = userEvent.setup()
+    const path = kind === "prompt" ? "/prompts" : "/datasets"
+    renderShell(`${path}?keep=1`, <PageFrame breadcrumbs={[{ label: kind }]}>
+      <PageHeader title={kind} />
+      <form id={`create-${kind}`} data-testid="create-form"><input aria-label="Name" /><textarea aria-label="Content" /></form>
+    </PageFrame>)
+    const form = screen.getByTestId("create-form")
+    const scroll = vi.fn()
+    form.scrollIntoView = scroll
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "Unsaved name")
+    const action = screen.getByRole("link", { name: "New" })
+    expect(action).toHaveAttribute("href", `${path}?keep=1#create-${kind}`)
+    await user.click(action)
+    expect(scroll).toHaveBeenCalledWith({ block: "start" })
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveFocus()
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Unsaved name")
+    expect(screen.getByRole("link", { name: "New" })).toHaveAttribute("href", `${path}?keep=1#create-${kind}`)
+  })
 })

@@ -23,7 +23,7 @@ function routeChrome(pathname: string, search: string): PageChrome {
   const newEvaluation = pathname === "/" || (section === "evaluations" && segments[1] !== "new")
   const newLibrary = pathname === "/prompts" || pathname === "/datasets"
   const mobileAction = newEvaluation || newLibrary ? <Link
-    to={newEvaluation ? "/evaluations/new" : `${pathname}#create-${section === "prompts" ? "prompt" : "dataset"}`}
+    to={newEvaluation ? "/evaluations/new" : `${pathname}${search}#create-${section === "prompts" ? "prompt" : "dataset"}`}
     className={cn(buttonVariants({ variant: newEvaluation ? "default" : "outline" }), "h-11")}><Plus aria-hidden="true" />New</Link> : undefined
   return { breadcrumbs, mobileTitle: label, mobileAction, mobileBack: detail ? { label, to: root } : undefined }
 }
