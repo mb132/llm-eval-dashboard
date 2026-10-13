@@ -53,6 +53,14 @@ describe("dataset management", () => {
     fetchMock.mockReset()
     vi.stubGlobal("fetch", fetchMock)
   })
+  it("uses singular dataset and case copy for a one-case dataset", async () => {
+    fetchMock.mockResolvedValue(jsonResponse([{ ...dataset, test_case_count: 1 }]))
+    renderApp("/datasets")
+    expect(await screen.findByText("1 dataset · 1 case")).toBeInTheDocument()
+    const row = within(screen.getByRole("table", { name: "Saved datasets" })).getByRole("row", { name: /General knowledge/ })
+    expect(within(row).getByText("case ·", { exact: true })).toBeInTheDocument()
+  })
+
   it("shows the empty state and creates a dataset with its first case", async () => {
     const user = userEvent.setup()
     fetchMock.mockImplementation(async (input, init) => {

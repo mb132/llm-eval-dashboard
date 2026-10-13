@@ -510,6 +510,27 @@ describe("dashboard", () => {
       await screen.findByText(/only one prompt version/i),
     ).toBeInTheDocument()
   })
+  it.each(["0.121109", null])("preserves headline cost precision and missing-data feedback for %s", async (estimatedUsd) => {
+    const original = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) =>
+      String(input).endsWith("/cost-summary")
+        ? jsonResponse({ ...cost, overall: { ...cost.overall, estimated_usd: estimatedUsd } })
+        : original(input, init),
+    )
+    render(<MemoryRouter><App /></MemoryRouter>)
+    await screen.findByText("exact 70.0% · 3 scored")
+    const overview = within(screen.getByLabelText("Run overview"))
+    const costCell = overview.getByText("Est. cost").parentElement!
+    if (estimatedUsd === null) {
+      expect(within(costCell).getByText("—", { exact: true })).toBeInTheDocument()
+      expect(costCell).not.toHaveTextContent("$")
+    } else {
+      expect(costCell).toHaveTextContent("$0.121109")
+    }
+    expect(costCell).toHaveTextContent(`${cost.overall.priced_results} priced`)
+    expect(costCell).toHaveTextContent(`${cost.overall.unavailable_results} unpriced`)
+  })
+
   it("marks leaders only when the entire column is complete", async () => {
     const original = fetchMock.getMockImplementation()!
     fetchMock.mockImplementation(async (input, init) => {

@@ -109,7 +109,7 @@ describe("prompt redesign regression coverage", () => {
 
   it("searches older user and system templates case-insensitively and counts actual versions", async () => {
     show("/prompts")
-    await screen.findByText("1 prompts · 3 versions")
+    await screen.findByText("1 prompt · 3 versions")
     const search = screen.getByRole("searchbox", { name: "Search prompts" })
     for (const phrase of ["VERSION 1 USER", "version 2 SYSTEM"]) {
       fireEvent.change(search, { target: { value: phrase } })
@@ -121,6 +121,12 @@ describe("prompt redesign regression coverage", () => {
     }
   })
 
+  it("uses singular version copy for a prompt with one immutable version", async () => {
+    fetchMock.mockImplementation(async (input) => response(String(input) === "/api/prompts" ? [summary(second)] : second))
+    show("/prompts")
+    expect(await screen.findByText("1 prompt · 1 version")).toBeInTheDocument()
+  })
+
   it("keeps name search usable while history is pending and retries incomplete content search", async () => {
     const history = deferred()
     fetchMock.mockResolvedValueOnce(response([summary(prompt)])).mockReturnValueOnce(history.promise)
@@ -129,14 +135,14 @@ describe("prompt redesign regression coverage", () => {
     await screen.findByRole("table")
     fireEvent.change(search, { target: { value: "SAFETY" } })
     expect(screen.getByRole("table")).toBeInTheDocument()
-    expect(screen.getByText("1 prompts · versions pending")).toBeInTheDocument()
+    expect(screen.getByText("1 prompt · versions pending")).toBeInTheDocument()
     fireEvent.change(search, { target: { value: "VERSION 1 USER" } })
     expect(screen.getByText("No matches in loaded prompts yet")).toBeInTheDocument()
     await act(async () => history.resolve(response({ detail: "History unavailable" }, 503)))
     expect(await screen.findByRole("alert")).toHaveTextContent("Template search and version count are incomplete")
     expect(screen.queryByText("No prompts match this search")).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Retry" }))
-    await screen.findByText("1 prompts · 3 versions")
+    await screen.findByText("1 prompt · 3 versions")
     expect(screen.getByRole("table")).toBeInTheDocument()
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })

@@ -182,7 +182,7 @@ export function PromptsPage() {
             <span className="font-mono">
               {isLoading
                 ? "Loading counts…"
-                : `${formatInt(prompts.length)} prompts · ${incomplete ? "versions pending" : `${formatInt(versions)} versions`}`}
+                : `${formatInt(prompts.length)} ${prompts.length === 1 ? "prompt" : "prompts"} · ${incomplete ? "versions pending" : `${formatInt(versions)} ${versions === 1 ? "version" : "versions"}`}`}
             </span>
           }
         />

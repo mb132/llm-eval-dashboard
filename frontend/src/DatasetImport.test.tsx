@@ -28,7 +28,7 @@ function mount(path = "/datasets/import") {
 }
 const file = (name = "sample.csv", content = "input,answer\nQuestion,Answer") => new File([content], name, { type: "text/csv" })
 const chooser = () => screen.getByLabelText("Choose a CSV or JSON file")
-const importButton = () => screen.getByRole("button", { name: /^(Import .*rows|Updating preview…|Importing…)$/ })
+const importButton = () => screen.getByRole("button", { name: /^(Import .*rows?|Updating preview…|Importing…)$/ })
 async function tick(ms = 300) { await act(async () => { vi.advanceTimersByTime(ms) }) }
 async function flush() { await act(async () => { await Promise.resolve() }) }
 function choose(value = file()) { fireEvent.change(chooser(), { target: { files: [value] } }); return value }
@@ -72,6 +72,17 @@ describe("dataset import flows", () => {
     await tick(1000); expect(forms(PREVIEW)).toHaveLength(0); expect(forms(COMMIT)).toHaveLength(0)
   })
 
+  it("uses singular row, column and case copy for a one-row import", async () => {
+    listHandler = () => response([{ ...datasets[0], test_case_count: 1 }])
+    previewHandler = () => response(preview({ source_columns: ["input"] }))
+    mount("/datasets/import?dataset=one"); choose(); await ready()
+    expect(screen.getByText("CSV · 1 data row · 1 column detected")).toBeInTheDocument()
+    expect(screen.getByText("1 row", { exact: true })).toBeInTheDocument()
+    expect(screen.getByText("Showing 1–1 of 1 row")).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "Dataset one · 1 case" })).toBeInTheDocument()
+    expect(importButton()).toHaveAccessibleName("Import 1 row")
+  })
+
   it("debounces automatic preview and commits the exact latest file, options and fingerprint once", async () => {
     mount(); const selected = choose(); await tick(299); expect(forms(PREVIEW)).toHaveLength(0)
     await tick(1); expect(forms(PREVIEW)).toHaveLength(1); await tick(); expect(importButton()).toBeEnabled()
@@ -96,7 +107,7 @@ describe("dataset import flows", () => {
     if (outcome === "success") old.resolve(response(preview({ mapping: {}, counts: { add: 999, final: 999 } })))
     else old.reject(new Error("Old preview error"))
     await flush(); expect(importButton()).toBeDisabled(); expect(screen.queryByText("999")).not.toBeInTheDocument(); expect(screen.queryByText("Old preview error")).not.toBeInTheDocument()
-    current.resolve(response(preview({ mapping: {} }))); await flush(); expect(importButton()).toHaveAccessibleName("Import 1 rows"); expect(importButton()).toBeEnabled()
+    current.resolve(response(preview({ mapping: {} }))); await flush(); expect(importButton()).toHaveAccessibleName("Import 1 row"); expect(importButton()).toBeEnabled()
   })
 
   it("retains the current draft on preview failure and retries it without a stale commit", async () => {
@@ -228,7 +239,7 @@ describe("dataset import flows", () => {
     mount("/datasets/import?dataset=one"); const selected = choose(); await ready()
     change("Delimiter", "\t"); fireEvent.click(screen.getByRole("radio", { name: "Import valid rows only" })); fireEvent.click(screen.getByRole("radio", { name: "Replace" })); await tick()
     const expected: ImportOptions = { destination: { mode: "existing", dataset_id: "one" }, mapping, delimiter: "\t", invalid_policy: "valid_only", duplicate_action: "replace" }
-    expect(importButton()).toHaveAccessibleName("Import 1 rows")
+    expect(importButton()).toHaveAccessibleName("Import 1 row")
     fireEvent.click(importButton()); await flush()
     expect(screen.getByRole("alert")).toHaveTextContent(message)
     const first = forms(COMMIT)[0]

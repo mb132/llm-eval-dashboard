@@ -60,6 +60,7 @@ export function DatasetsPage() {
     <FileUp aria-hidden="true" className="size-4" />Import CSV or JSON
   </Link>
   const visible = datasets.filter((item) => `${item.name} ${item.description ?? ""}`.toLowerCase().includes(search.toLowerCase()))
+  const caseCount = datasets.reduce((sum, item) => sum + item.test_case_count, 0)
   return <PageFrame
     breadcrumbs={[{ label: "Datasets" }]}
     actions={importLink}
@@ -68,7 +69,7 @@ export function DatasetsPage() {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <PageHeader
         title="Datasets"
-        metadata={<span className="font-mono">{formatInt(datasets.length)} datasets · {formatInt(datasets.reduce((sum, item) => sum + item.test_case_count, 0))} cases
+        metadata={<span className="font-mono">{formatInt(datasets.length)} {datasets.length === 1 ? "dataset" : "datasets"} · {formatInt(caseCount)} {caseCount === 1 ? "case" : "cases"}
         </span>}
       />
       <Field label="Search datasets" htmlFor="search-datasets" className="w-full md:max-w-64">
@@ -115,7 +116,7 @@ export function DatasetsPage() {
               <TableCell
                 className="font-mono text-data md:text-right max-md:inline-block max-md:py-0 max-md:pl-4"
               >{formatInt(item.test_case_count)}
-                <span className="md:hidden"> cases ·</span>
+                <span className="md:hidden"> {item.test_case_count === 1 ? "case" : "cases"} ·</span>
               </TableCell>
               <TableCell
                 className="font-mono text-data text-fg-muted md:whitespace-pre-line max-md:inline-block max-md:py-0"

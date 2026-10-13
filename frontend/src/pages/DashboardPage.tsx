@@ -616,8 +616,9 @@ function Overview({
           summaries.cost.overall.estimated_usd == null ? (
             "—"
           ) : (
-            <span className="text-metric-md [overflow-wrap:anywhere] md:text-metric-lg">
-              {formatUsd(summaries.cost.overall.estimated_usd)}
+            <span>
+              <span className="text-[16px] text-fg-muted">$</span>
+              {formatUsd(summaries.cost.overall.estimated_usd).replace(/^\$/, "")}
             </span>
           )
         }

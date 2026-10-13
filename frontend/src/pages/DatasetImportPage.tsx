@@ -380,7 +380,7 @@ export function DatasetImportPage() {
                     <p className="font-mono text-caption text-fg-muted">
                       {file.name.toLowerCase().endsWith(".csv") ? "CSV" : "JSON"}
                       {preview
-                        ? `${preview.rows.length ? ` · ${formatInt(preview.rows.length)} data rows` : ""} · ${formatInt(preview.source_columns.length)} columns detected`
+                        ? `${preview.rows.length ? ` · ${formatInt(preview.rows.length)} data ${preview.rows.length === 1 ? "row" : "rows"}` : ""} · ${formatInt(preview.source_columns.length)} ${preview.source_columns.length === 1 ? "column" : "columns"} detected`
                         : updating
                           ? " · Updating preview…"
                           : " · Preview unavailable"}
@@ -523,7 +523,7 @@ export function DatasetImportPage() {
                     )}
                     {datasets.map((dataset) => (
                       <option key={dataset.id} value={dataset.id}>
-                        {dataset.name} · {formatInt(dataset.test_case_count)} cases
+                        {dataset.name} · {formatInt(dataset.test_case_count)} {dataset.test_case_count === 1 ? "case" : "cases"}
                       </option>
                     ))}
                   </Select>
@@ -625,12 +625,12 @@ export function DatasetImportPage() {
             />
           </StepPanel>
         </div>
-        <Card className="min-w-0 xl:col-span-2 xl:row-start-2">
+        <Card className="min-w-0 md:row-start-3 xl:col-span-2 xl:row-start-2">
           <CardHeader>
             <CardTitle>Preview</CardTitle>
             {preview && (
               <span className="font-mono text-data text-fg-muted">
-                {formatInt(preview.rows.length)} rows
+                {formatInt(preview.rows.length)} {preview.rows.length === 1 ? "row" : "rows"}
               </span>
             )}
           </CardHeader>
@@ -656,7 +656,7 @@ export function DatasetImportPage() {
               : "Row numbers match the file (row 1 is the header)."}
           </CardFooter>
         </Card>
-        <Card className="min-w-0 self-start xl:col-start-2 xl:row-start-1">
+        <Card className="min-w-0 self-start md:row-start-2 xl:col-start-2 xl:row-start-1">
           <CardHeader>
             <CardTitle>Import plan</CardTitle>
             <Badge
@@ -739,7 +739,7 @@ export function DatasetImportPage() {
                 : updating
                   ? "Updating preview…"
                   : writeCount !== undefined
-                    ? `Import ${formatInt(writeCount)} rows`
+                    ? `Import ${formatInt(writeCount)} ${writeCount === 1 ? "row" : "rows"}`
                     : "Import rows"}
             </Button>
             <p role="status" className="text-caption text-fg-muted [overflow-wrap:anywhere]">
@@ -1007,7 +1007,7 @@ function PreviewRows({
           <span className="font-mono">
             Showing {formatInt(safePage * ROWS_PER_PAGE + 1)}–
             {formatInt(Math.min((safePage + 1) * ROWS_PER_PAGE, preview.rows.length))} of{" "}
-            {formatInt(preview.rows.length)} rows
+            {formatInt(preview.rows.length)} {preview.rows.length === 1 ? "row" : "rows"}
           </span>
           {pageCount > 1 && (
             <div className="flex gap-2">
