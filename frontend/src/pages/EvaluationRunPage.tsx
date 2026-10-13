@@ -455,7 +455,14 @@ export function EvaluationRunPage() {
                 <>
                   {formatInt(costSummary?.overall.unavailable_results)} unpriced
                   ·{" "}
-                  <Link className="text-link" to="/models">
+                  <Link
+                    className={buttonVariants({
+                      variant: "link",
+                      size: "xs",
+                      className: "max-md:h-11 md:h-auto",
+                    })}
+                    to="/models"
+                  >
                     Add pricing
                   </Link>
                 </>
@@ -477,7 +484,7 @@ export function EvaluationRunPage() {
               </span>
             </CardHeader>
             <div className="flex flex-wrap gap-3 border-b border-line bg-chrome p-3">
-              <label className="min-w-0 flex-1 text-caption text-fg-muted md:min-w-[220px]">
+              <label className="min-w-0 flex-1 text-caption text-fg-muted md:w-44 md:flex-none">
                 Search results
                 <Input
                   type="search"
@@ -495,7 +502,7 @@ export function EvaluationRunPage() {
               >
                 Filters
               </Button>
-              <div className="hidden min-w-0 md:block md:flex-[3]">
+              <div className="hidden min-w-0 md:block md:flex-1">
                 {filterControls}
               </div>
             </div>
@@ -685,6 +692,7 @@ export function EvaluationRunPage() {
               {results.length < resultTotal && !active && (
                 <Button
                   variant="outline"
+                  className="max-md:h-11"
                   disabled={isLoadingMore}
                   onClick={loadMore}
                 >
@@ -700,7 +708,7 @@ export function EvaluationRunPage() {
             onOpenChange={setFiltersOpen}
             title="Filter results"
             footer={
-              <Button onClick={() => setFiltersOpen(false)}>
+              <Button className="max-md:h-11" onClick={() => setFiltersOpen(false)}>
                 Show results
               </Button>
             }
@@ -712,6 +720,7 @@ export function EvaluationRunPage() {
               <CardHeader>
                 <Button
                   variant="ghost"
+                  className="max-md:h-11 max-md:w-full max-md:justify-start"
                   aria-expanded={summaryOpen}
                   aria-controls="summary-details"
                   onClick={() => setSummaryOpen(!summaryOpen)}
@@ -798,7 +807,7 @@ function ResultFiltersPanel({
     filters.caseType,
   )
   return (
-    <div className="flex flex-wrap items-end gap-3">
+    <div className="grid min-w-0 grid-cols-1 items-end gap-3 md:grid-cols-3 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]">
       <FilterSelect
         label="Model"
         values={filters.modelIds ?? []}
@@ -880,6 +889,7 @@ function ResultFiltersPanel({
       />
       <Button
         variant="ghost"
+        className="max-md:h-11"
         disabled={!hasFilters && !search}
         onClick={onClear}
       >
@@ -1026,7 +1036,7 @@ function PromptDisclosure({
     <div className="min-w-0">
       <Button
         variant="ghost"
-        className="max-md:h-11"
+        className="max-md:h-11 max-md:w-full max-md:justify-start"
         aria-expanded={open}
         aria-controls={id}
         onClick={() => setOpen(!open)}
@@ -1157,7 +1167,11 @@ function ResultDetails({ result }: { result: EvaluationResult }) {
               {" "}
               ·{" "}
               <a
-                className="text-link"
+                className={buttonVariants({
+                  variant: "link",
+                  size: "xs",
+                  className: "max-md:h-11 md:h-auto",
+                })}
                 href={result.pricing.source_url}
                 target="_blank"
                 rel="noreferrer"

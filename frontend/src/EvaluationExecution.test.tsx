@@ -490,6 +490,63 @@ describe("evaluation execution", () => {
     expect(trigger).toHaveFocus()
   })
 
+  it("applies and clears filters from the mobile dialog before showing results", async () => {
+    const user = userEvent.setup()
+    serveCompleted()
+    renderApp(`/evaluations/${RUN_ID}`)
+    await screen.findByRole("table", { name: "Results" })
+    const trigger = screen.getByRole("button", { name: "Filters" })
+    await user.click(trigger)
+    const dialog = within(screen.getByRole("dialog", { name: "Filter results" }))
+    await user.selectOptions(dialog.getByRole("combobox", { name: "Outcome" }), "failed")
+    await waitFor(() => expect(
+      fetchMock.mock.calls.filter(([path]) => String(path).includes("/results?")).at(-1)?.[0],
+    ).toContain("outcome=failed"))
+    await user.click(dialog.getByRole("button", { name: "Clear filters" }))
+    await waitFor(() => expect(
+      fetchMock.mock.calls.filter(([path]) => String(path).includes("/results?")).at(-1)?.[0],
+    ).not.toContain("outcome="))
+    expect(dialog.getByRole("combobox", { name: "Outcome" })).toHaveValue("")
+    await user.click(dialog.getByRole("button", { name: "Show results" }))
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
+  it("opens mobile result and summary disclosures with the keyboard", async () => {
+    const user = userEvent.setup()
+    serveCompleted([{ ...result, system_prompt: "Stored mobile system prompt" }])
+    renderApp(`/evaluations/${RUN_ID}`)
+    await screen.findByRole("table", { name: "Results" })
+    const expand = screen.getAllByRole("button", { name: /Result 1:/ })
+      .find((button) => !button.closest("table"))!
+    expand.focus()
+    await user.keyboard("{Enter}")
+    expect(expand).toHaveAttribute("aria-expanded", "true")
+    const details = within(document.getElementById(expand.getAttribute("aria-controls")!)!)
+    expect(within(details.getByRole("region", { name: "Expected" }))
+      .getByText(result.expected_output)).toBeInTheDocument()
+    for (const name of [/Rendered prompt/, /System prompt/]) {
+      const disclosure = details.getByRole("button", { name })
+      disclosure.focus()
+      await user.keyboard(" ")
+      expect(disclosure).toHaveAttribute("aria-expanded", "true")
+      expect(document.getElementById(disclosure.getAttribute("aria-controls")!)).toBeVisible()
+    }
+    expect(details.getByText("Stored mobile system prompt")).toBeInTheDocument()
+    const summary = screen.getByRole("button", { name: "Summary details" })
+    summary.focus()
+    await user.keyboard("{Enter}")
+    expect(summary).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("heading", { name: "Performance" })).toBeInTheDocument()
+    await user.keyboard(" ")
+    expect(summary).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByRole("heading", { name: "Performance" })).not.toBeInTheDocument()
+    expand.focus()
+    await user.keyboard("{Enter}")
+    expect(expand).toHaveAttribute("aria-expanded", "false")
+    expect(document.getElementById(expand.getAttribute("aria-controls")!)).not.toBeVisible()
+  })
+
   it("ignores a pagination response from filters that have since changed", async () => {
     const user = userEvent.setup()
     serveCompleted([result], 2)
