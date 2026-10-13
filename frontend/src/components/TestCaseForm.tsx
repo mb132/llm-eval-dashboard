@@ -1,6 +1,5 @@
 import { LoaderCircle, Plus, Save, Trash2 } from "lucide-react"
-import { useId, useState, type FormEvent } from "react"
-
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react"
 import type {
   MetadataValue,
   SecurityTestType,
@@ -11,12 +10,13 @@ import type {
 import { Alert } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Field } from "@/components/ui/field"
 import { Select } from "@/components/ui/select"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Textarea } from "@/components/ui/textarea"
 
 type MetadataKind = "text" | "number" | "boolean" | "null"
 type MetadataRow = { id: number; key: string; kind: MetadataKind; value: string }
-
 let nextMetadataRowId = 0
 
 function metadataRows(metadata: TestCaseMetadata | null | undefined): MetadataRow[] {
@@ -43,6 +43,11 @@ export function TestCaseForm({
   onSubmit,
   onCancel,
   formId,
+  disabledReason,
+  onDirtyChange,
+  editor = false,
+  beforeFields,
+  fieldsLegend = "Test case fields",
 }: {
   initial?: TestCasePayload
   submitLabel: string
@@ -52,8 +57,14 @@ export function TestCaseForm({
   onSubmit: (payload: TestCasePayload) => Promise<void>
   onCancel?: () => void
   formId?: string
+  disabledReason?: string
+  onDirtyChange?: (dirty: boolean) => void
+  editor?: boolean
+  beforeFields?: ReactNode
+  fieldsLegend?: string
 }) {
   const fieldIdPrefix = useId()
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const [input, setInput] = useState(initial?.input ?? "")
   const [expectedAnswer, setExpectedAnswer] = useState(initial?.expected_answer ?? "")
   const [caseType, setCaseType] = useState<TestCaseType>(
@@ -64,20 +75,21 @@ export function TestCaseForm({
   )
   const [category, setCategory] = useState(initial?.category ?? "")
   const [metadata, setMetadata] = useState(() => metadataRows(initial?.metadata))
-  const [validationError, setValidationError] = useState<string | null>(null)
-
+  const parsedMetadata = parseMetadata(metadata)
+  const requiredError = !input.trim() || !expectedAnswer.trim()
+    ? `Input and ${caseType === "security" ? "failure marker" : "expected answer"} are required.`
+    : null
+  const validationError = typeof parsedMetadata === "string" ? parsedMetadata : null
+  const requiredMessageId = `${fieldIdPrefix}-required`
+  const metadataMessageId = `${fieldIdPrefix}-metadata-error`
+  const metadataKeys = metadata.map((row) => row.key.trim())
+  const draft = JSON.stringify([input, expectedAnswer, caseType, securityTestType, category, metadata.map(({ key, kind, value }) => ({ key, kind, value }))])
+  const [originalDraft] = useState(draft)
+  useEffect(() => { onDirtyChange?.(draft !== originalDraft) }, [draft, originalDraft, onDirtyChange])
+  useEffect(() => { if (editor) inputRef.current?.focus() }, [editor])
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!input.trim() || !expectedAnswer.trim()) {
-      setValidationError("Input and expected answer are required.")
-      return
-    }
-    const parsedMetadata = parseMetadata(metadata)
-    if (typeof parsedMetadata === "string") {
-      setValidationError(parsedMetadata)
-      return
-    }
-    setValidationError(null)
+    if (busy || disabled || requiredError || validationError || typeof parsedMetadata === "string") return
     await onSubmit({
       input,
       expected_answer: expectedAnswer,
@@ -87,176 +99,217 @@ export function TestCaseForm({
       metadata: parsedMetadata,
     })
   }
-
   function updateRow(id: number, update: Partial<MetadataRow>) {
     setMetadata((rows) => rows.map((row) => (row.id === id ? { ...row, ...update } : row)))
   }
-
   return (
-    <form id={formId} className="space-y-5" onSubmit={handleSubmit} noValidate>
-      <Field label="Input" htmlFor={`${fieldIdPrefix}-input`}>
-        <Textarea
-          id={`${fieldIdPrefix}-input`}
-          value={input}
-          maxLength={20_000}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="What is the capital of France?"
-          required
-        />
-      </Field>
-      <Field label="Test case type" htmlFor={`${fieldIdPrefix}-case-type`}>
-        <Select
-          id={`${fieldIdPrefix}-case-type`}
-          value={caseType}
-          onChange={(event) => setCaseType(event.target.value as TestCaseType)}
-        >
-          <option value="standard">Standard</option>
-          <option value="security">Security</option>
-        </Select>
-      </Field>
-      {caseType === "security" && (
-        <Field
-          label="Security test type"
-          htmlFor={`${fieldIdPrefix}-security-test-type`}
-        >
-          <Select
-            id={`${fieldIdPrefix}-security-test-type`}
-            value={securityTestType}
-            onChange={(event) =>
-              setSecurityTestType(event.target.value as SecurityTestType)
-            }
-          >
-            <option value="direct_prompt_injection">Direct prompt injection</option>
-            <option value="instruction_override">Instruction override</option>
-            <option value="system_prompt_extraction">System prompt extraction</option>
-          </Select>
-        </Field>
-      )}
-      <Field
-        label={caseType === "security" ? "Failure marker" : "Expected answer"}
-        htmlFor={`${fieldIdPrefix}-expected-answer`}
+    <form id={formId} className="space-y-4" onSubmit={handleSubmit} noValidate>
+      {beforeFields}
+      <fieldset
+        disabled={busy}
+        className={editor ? "grid min-w-0 gap-4 md:grid-cols-2" : "min-w-0 space-y-4"}
       >
-        <Textarea
-          id={`${fieldIdPrefix}-expected-answer`}
-          value={expectedAnswer}
-          maxLength={20_000}
-          onChange={(event) => setExpectedAnswer(event.target.value)}
-          placeholder={caseType === "security" ? "SECURITY_TEST_FAILED" : "Paris"}
-          required
-        />
-        {caseType === "security" && (
-          <p className="text-xs text-muted-foreground">
-            The test fails if the normalized model response contains this
-            synthetic marker.
-          </p>
-        )}
-      </Field>
-      <Field label="Category" htmlFor={`${fieldIdPrefix}-category`} optional>
-        <Input
-          id={`${fieldIdPrefix}-category`}
-          value={category}
-          maxLength={100}
-          onChange={(event) => setCategory(event.target.value)}
-          placeholder="general-knowledge"
-        />
-      </Field>
-
-      <fieldset className="space-y-3">
-        <legend className="text-sm font-medium">Metadata (optional)</legend>
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            Up to 20 flat key/value pairs. Nested objects and lists are not
-            supported.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0 whitespace-nowrap"
-            disabled={metadata.length >= 20}
-            onClick={() =>
-              setMetadata((rows) => [
-                ...rows,
-                { id: nextMetadataRowId++, key: "", kind: "text", value: "" },
-              ])
-            }
-          >
-            <Plus className="size-4" />
-            Add field
-          </Button>
-        </div>
-        {metadata.map((row, index) => (
-          <div
-            key={row.id}
-            className="grid gap-2 rounded-lg border bg-muted/40 p-3 sm:grid-cols-[1fr_8rem_1fr_auto]"
-          >
-            <Input
-              aria-label={`Metadata key ${index + 1}`}
-              value={row.key}
-              maxLength={100}
-              placeholder="difficulty"
-              onChange={(event) => updateRow(row.id, { key: event.target.value })}
-            />
-            <Select
-              aria-label={`Metadata type ${index + 1}`}
-              value={row.kind}
-              onChange={(event) =>
-                updateRow(row.id, {
-                  kind: event.target.value as MetadataKind,
-                  value: "",
-                })
-              }
+        <legend
+          className={fieldsLegend === "Test case fields" ? "sr-only" : "mb-4 text-overline text-fg-muted"}
+        >{fieldsLegend}
+        </legend>
+        <Field label="Input" htmlFor={`${fieldIdPrefix}-input`}>
+          <Textarea
+            id={`${fieldIdPrefix}-input`}
+            ref={inputRef}
+            aria-describedby={requiredError ? requiredMessageId : undefined}
+            className="font-mono [overflow-wrap:anywhere]"
+            rows={editor ? 9 : 4}
+            value={input}
+            maxLength={20_000}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder="What is the capital of France?"
+            required
+          />
+        </Field>
+        <div className="min-w-0 space-y-4">
+          <SegmentedControl
+            mode="radio"
+            label="Test case type"
+            value={caseType}
+            className="[&_label]:h-10"
+            options={[{ value: "standard", label: "Standard" }, { value: "security", label: "Security" }]}
+            onValueChange={(value) => setCaseType(value as TestCaseType)}
+          />
+          {caseType === "security" && (
+            <Field
+              label="Security test type"
+              htmlFor={`${fieldIdPrefix}-security-test-type`}
             >
-              <option value="text">Text</option>
-              <option value="number">Number</option>
-              <option value="boolean">Boolean</option>
-              <option value="null">Null</option>
-            </Select>
-            {row.kind === "boolean" ? (
               <Select
-                aria-label={`Metadata value ${index + 1}`}
-                value={row.value || "true"}
-                onChange={(event) => updateRow(row.id, { value: event.target.value })}
+                id={`${fieldIdPrefix}-security-test-type`}
+                value={securityTestType}
+                onChange={(event) =>
+                  setSecurityTestType(event.target.value as SecurityTestType)
+                }
               >
-                <option value="true">True</option>
-                <option value="false">False</option>
+                <option value="direct_prompt_injection">Direct prompt injection</option>
+                <option value="instruction_override">Instruction override</option>
+                <option value="system_prompt_extraction">System prompt extraction</option>
               </Select>
-            ) : (
-              <Input
-                aria-label={`Metadata value ${index + 1}`}
-                value={row.value}
-                maxLength={row.kind === "text" ? 1_000 : undefined}
-                type={row.kind === "number" ? "number" : "text"}
-                disabled={row.kind === "null"}
-                placeholder={row.kind === "null" ? "null" : "easy"}
-                onChange={(event) => updateRow(row.id, { value: event.target.value })}
-              />
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="size-10"
-              aria-label={`Remove metadata field ${index + 1}`}
-              onClick={() =>
-                setMetadata((rows) =>
-                  rows.filter((item) => item.id !== row.id),
-                )
-              }
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          </div>
-        ))}
-      </fieldset>
+            </Field>
+          )}
+          <Field
+            label={caseType === "security" ? "Failure marker" : "Expected answer"}
+            htmlFor={`${fieldIdPrefix}-expected-answer`}
+            hint={caseType === "security" ? "The test fails if the reply contains this text." : undefined}
+          >
+            <Textarea
+              id={`${fieldIdPrefix}-expected-answer`}
+              className={caseType === "security" ? "min-h-9 h-9 resize-y font-mono max-md:min-h-11 max-md:h-11" : "font-mono"}
+              rows={caseType === "security" ? 1 : undefined}
+              aria-describedby={requiredError ? requiredMessageId : undefined}
+              value={expectedAnswer}
+              maxLength={20_000}
+              onChange={(event) => setExpectedAnswer(event.target.value)}
+              placeholder={caseType === "security" ? "SECURITY_TEST_FAILED" : "Paris"}
+              required
+            />
+          </Field>
+          <Field label="Category" htmlFor={`${fieldIdPrefix}-category`} optional>
+            <Input
+              id={`${fieldIdPrefix}-category`}
+              className="font-mono"
+              value={category}
+              maxLength={100}
+              onChange={(event) => setCategory(event.target.value)}
+              placeholder="general-knowledge"
+            />
+          </Field>
 
-      {(validationError || error) && (
-        <Alert variant="destructive" role="alert">
-          {validationError ?? error}
+          <fieldset className="space-y-3">
+            <legend className="text-caption font-medium">Metadata · up to 20 flat key/value pairs</legend>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Up to 20 flat key/value pairs. Nested objects and lists are not
+                supported.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="shrink-0 whitespace-nowrap max-md:min-h-11 max-md:text-sm"
+                disabled={metadata.length >= 20}
+                onClick={() =>
+                  setMetadata((rows) => [
+                    ...rows,
+                    { id: nextMetadataRowId++, key: "", kind: "text", value: "" },
+                  ])
+                }
+              >
+                <Plus className="size-4" />
+                Add field
+              </Button>
+            </div>
+            {metadata.length >= 20 && <p className="text-caption text-fg-muted">Metadata has reached the limit of 20 fields.</p>}
+            {metadata.map((row, index) => (
+              <div
+                key={row.id}
+                className="grid min-w-0 grid-cols-2 gap-2 rounded-md border border-line bg-inset p-2"
+              >
+                <Field label="Key" htmlFor={`${fieldIdPrefix}-metadata-key-${row.id}`}>
+                  <Input
+                    className="font-mono"
+                    aria-label={`Metadata key ${index + 1}`}
+                    aria-invalid={!row.key.trim() || metadataKeys.filter((key) => key === row.key.trim()).length > 1}
+                    aria-describedby={validationError ? metadataMessageId : undefined}
+                    value={row.key}
+                    maxLength={100}
+                    placeholder="difficulty"
+                    onChange={(event) => updateRow(row.id, { key: event.target.value })}
+                  />
+                </Field>
+                <Field label="Type" htmlFor={`${fieldIdPrefix}-metadata-type-${row.id}`}>
+                  <Select
+                    className="font-mono"
+                    aria-label={`Metadata type ${index + 1}`}
+                    value={row.kind}
+                    onChange={(event) =>
+                      updateRow(row.id, {
+                        kind: event.target.value as MetadataKind,
+                        value: "",
+                      })
+                    }
+                  >
+                    <option value="text">Text</option>
+                    <option value="number">Number</option>
+                    <option value="boolean">Boolean</option>
+                    <option value="null">Null</option>
+                  </Select>
+                </Field>
+                <Field label="Value" htmlFor={`${fieldIdPrefix}-metadata-value-${row.id}`}>
+                  {row.kind === "boolean" ? (
+                    <Select
+                      className="font-mono"
+                      aria-label={`Metadata value ${index + 1}`}
+                      aria-describedby={validationError ? metadataMessageId : undefined}
+                      value={row.value || "true"}
+                      onChange={(event) => updateRow(row.id, { value: event.target.value })}
+                    >
+                      <option value="true">True</option>
+                      <option value="false">False</option>
+                    </Select>
+                  ) : (
+                    <Input
+                      className="font-mono"
+                      aria-label={`Metadata value ${index + 1}`}
+                      aria-invalid={row.kind === "number" && (!row.value.trim() || !Number.isFinite(Number(row.value)))}
+                      aria-describedby={validationError ? metadataMessageId : undefined}
+                      value={row.value}
+                      maxLength={row.kind === "text" ? 1_000 : undefined}
+                      type="text"
+                      inputMode={row.kind === "number" ? "decimal" : undefined}
+                      disabled={row.kind === "null"}
+                      placeholder={row.kind === "null" ? "null" : "easy"}
+                      onChange={(event) => updateRow(row.id, { value: event.target.value })}
+                    />
+                  )}
+                </Field>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-lg"
+                  className="self-end"
+                  aria-label={`Remove metadata field ${index + 1}`}
+                  onClick={() =>
+                    setMetadata((rows) =>
+                      rows.filter((item) => item.id !== row.id),
+                    )
+                  }
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            ))}
+          </fieldset>
+        </div>
+      </fieldset>
+      {disabledReason && <p
+        id={`${formId ?? fieldIdPrefix}-disabled-reason`}
+        className="text-caption text-fg-muted"
+        role="status"
+      >{disabledReason}
+      </p>}
+      {requiredError && <p id={requiredMessageId} className="text-caption text-fg-muted" role="status">{requiredError}
+      </p>}
+      {validationError && (
+        <Alert id={metadataMessageId} variant="destructive" role="alert">
+          {validationError}
         </Alert>
       )}
+      {error && <Alert variant="destructive" role="alert">{error}
+      </Alert>}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || disabled}>
+        <Button
+          type="submit"
+          className="max-md:min-h-12"
+          disabled={busy || disabled || !!requiredError || !!validationError}
+        >
           {busy ? (
             <LoaderCircle className="size-4 animate-spin" />
           ) : (
@@ -268,6 +321,7 @@ export function TestCaseForm({
           <Button
             type="button"
             variant="outline"
+            className="max-md:min-h-11"
             disabled={busy}
             onClick={onCancel}
           >
@@ -302,26 +356,4 @@ function parseMetadata(rows: MetadataRow[]): TestCaseMetadata | null | string {
     }
   }
   return Object.fromEntries(entries)
-}
-
-function Field({
-  label,
-  htmlFor,
-  optional = false,
-  children,
-}: {
-  label: string
-  htmlFor: string
-  optional?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <div className="space-y-2">
-      <label htmlFor={htmlFor} className="flex items-center justify-between text-sm font-medium">
-        {label}
-        {optional && <span className="text-xs font-normal text-muted-foreground">Optional</span>}
-      </label>
-      {children}
-    </div>
-  )
 }

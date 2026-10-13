@@ -40,9 +40,7 @@ class PromptCreate(StrictRequest):
 
     name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
     description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
-    system_prompt: str | None = Field(
-        default=None, max_length=MAX_SYSTEM_PROMPT_LENGTH
-    )
+    system_prompt: str | None = Field(default=None, max_length=MAX_SYSTEM_PROMPT_LENGTH)
     content: str = Field(min_length=1, max_length=MAX_CONTENT_LENGTH)
 
 
@@ -65,9 +63,7 @@ class PromptVersionCreate(StrictRequest):
     """Payload for appending an immutable prompt version."""
 
     content: str = Field(min_length=1, max_length=MAX_CONTENT_LENGTH)
-    system_prompt: str | None = Field(
-        default=None, max_length=MAX_SYSTEM_PROMPT_LENGTH
-    )
+    system_prompt: str | None = Field(default=None, max_length=MAX_SYSTEM_PROMPT_LENGTH)
 
 
 class PromptVersionResponse(BaseModel):
@@ -214,6 +210,7 @@ async def add_prompt_version(
             session,
             prompt_id,
             content=payload.content,
+            system_prompt=payload.system_prompt,
         )
     except (PromptConflictError, PromptNotFoundError, PromptValidationError) as exc:
         _raise_http_error(exc)

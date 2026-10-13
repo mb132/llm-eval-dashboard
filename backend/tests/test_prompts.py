@@ -64,6 +64,85 @@ def test_prompt_lifecycle_preserves_immutable_versions(
     assert "versions" not in prompts.json()[0]
 
 
+def test_new_version_persists_both_edited_prompt_fields(
+    prompt_client: TestClient,
+) -> None:
+    original_system = "Antworte freundlich auf Deutsch."
+    created = prompt_client.post(
+        "/api/prompts",
+        json={
+            "name": "Sohlenwerk",
+            "content": PROMPT_CONTENT,
+            "system_prompt": original_system,
+        },
+    )
+    assert created.status_code == 201
+    original_version = created.json()["versions"][0]
+    prompt_id = created.json()["id"]
+    new_content = "Beantworte die Kundenanfrage.\n{{input}}"
+    new_system = "Sprich die Kundschaft mit „du“ an.\n\nErfinde keine Größen."
+
+    response = prompt_client.post(
+        f"/api/prompts/{prompt_id}/versions",
+        json={"content": new_content, "system_prompt": new_system},
+    )
+    assert response.status_code == 201
+    version = response.json()
+    assert version["version_number"] == 2
+    assert version["content"] == new_content
+    assert version["system_prompt"] == new_system
+
+    persisted = prompt_client.get(f"/api/prompts/{prompt_id}")
+    assert persisted.status_code == 200
+    assert persisted.json()["versions"] == [version, original_version]
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [{}, {"system_prompt": None}, {"system_prompt": ""}, {"system_prompt": " \n\t "}],
+)
+def test_new_version_allows_removing_system_prompt(
+    prompt_client: TestClient,
+    fields: dict[str, str | None],
+) -> None:
+    created = prompt_client.post(
+        "/api/prompts",
+        json={
+            "name": "Optional system",
+            "content": PROMPT_CONTENT,
+            "system_prompt": "Original instructions",
+        },
+    )
+    assert created.status_code == 201
+    original_version = created.json()["versions"][0]
+    prompt_id = created.json()["id"]
+    response = prompt_client.post(
+        f"/api/prompts/{prompt_id}/versions",
+        json={"content": PROMPT_CONTENT, **fields},
+    )
+    assert response.status_code == 201
+    assert response.json()["system_prompt"] is None
+    assert prompt_client.get(f"/api/prompts/{prompt_id}").json()["versions"] == [
+        response.json(),
+        original_version,
+    ]
+
+
+def test_new_version_rejects_system_placeholders_without_saving(
+    prompt_client: TestClient,
+) -> None:
+    created = create_prompt(prompt_client)
+    assert created.status_code == 201
+    prompt_id = created.json()["id"]
+    response = prompt_client.post(
+        f"/api/prompts/{prompt_id}/versions",
+        json={"content": PROMPT_CONTENT, "system_prompt": "Instructions {{input}}"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "System prompt must not contain placeholders."
+    assert prompt_client.get(f"/api/prompts/{prompt_id}").json() == created.json()
+
+
 @pytest.mark.parametrize(
     "content",
     [

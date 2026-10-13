@@ -3,12 +3,14 @@ import type * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-const alertVariants = cva("rounded-lg border p-3 text-sm", {
+const alertVariants = cva("rounded-md px-3 py-2.5 text-body flex gap-2 items-start [&>svg]:size-4 [&>svg]:shrink-0", {
   variants: {
     variant: {
-      default: "bg-card text-card-foreground",
-      destructive: "border-destructive-border bg-destructive-soft text-destructive-soft-foreground",
-      success: "border-success-border bg-success-soft text-success-soft-foreground",
+      default: "border border-line bg-inset text-fg",
+      destructive: "bg-destructive-soft text-destructive [&_p]:text-fg",
+      success: "bg-success-soft text-success",
+      warning: "bg-warning-soft text-warning",
+      info: "bg-info-soft text-info",
     },
   },
   defaultVariants: {
@@ -24,6 +26,7 @@ function Alert({
   return (
     <div
       data-slot="alert"
+      role={variant === "destructive" ? "alert" : variant === "success" ? "status" : undefined}
       className={cn(alertVariants({ variant }), className)}
       {...props}
     />

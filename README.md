@@ -12,6 +12,21 @@ latency, token usage, estimated cost, and security checks.
 - Review run history, individual requests, model and prompt comparisons, and
   normalized exports.
 - Try one-off prompts in the playground without saving them.
+- Use a responsive workspace with Dark/Light themes, keyboard navigation, and
+  locally bundled interface and data fonts.
+
+## Workspace
+
+The sidebar groups **Dashboard**, **Runs**, and **Playground** under Analyze,
+and **Prompts**, **Datasets**, and **Models** under Library. On mobile, open the
+navigation drawer from the menu button. Choose Dark or Light in the sidebar or
+mobile top bar; the choice is remembered in your browser.
+
+New evaluation validates a complete selection automatically and shows the
+request total before **Start evaluation** becomes available. Dataset imports
+also preview automatically as the file, destination, mapping, or rules change;
+**Import N rows** is available only for the current valid preview. Prompt forms
+validate templates as you type, and case/model removals use inline confirmation.
 
 ## Quick start
 
@@ -58,3 +73,8 @@ credentials cannot be recovered.
 
 The repository includes [example datasets](examples/imports/) that can be
 imported from the Datasets page.
+
+The frontend redesign [acceptance report](docs/redesign/ACCEPTANCE-REPORT.md)
+records screen changes, verification, data limitations, and browser QA evidence.
+[Proposed wiki updates](docs/redesign/WIKI-PROPOSAL.md) are prepared for manual
+publication.
