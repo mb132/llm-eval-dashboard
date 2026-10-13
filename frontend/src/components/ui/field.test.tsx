@@ -1,13 +1,63 @@
 import { fireEvent, render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { useState } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { Field } from "./field"
 import { Input } from "./input"
 import { Select } from "./select"
+import { Switch } from "./switch"
 import { CardTitle } from "./card"
 import { Alert } from "./alert"
 import { cn } from "@/lib/utils"
 
 describe("shared semantic helpers", () => {
+  it("toggles a labelled switch through its label and keyboard without submitting the form", async () => {
+    const user = userEvent.setup()
+    const submit = vi.fn((event) => event.preventDefault())
+    function LabelledSwitch() {
+      const [checked, setChecked] = useState(false)
+      return <form onSubmit={submit}>
+        <Switch id="active-model" checked={checked} onCheckedChange={setChecked} />
+        <label htmlFor="active-model">Active model</label>
+      </form>
+    }
+    render(<LabelledSwitch />)
+    const control = screen.getByRole("switch", { name: "Active model" })
+    expect(control).toHaveAttribute("aria-checked", "false")
+    await user.click(screen.getByText("Active model"))
+    expect(control).toHaveAttribute("aria-checked", "true")
+    control.focus()
+    await user.keyboard(" ")
+    expect(control).toHaveAttribute("aria-checked", "false")
+    await user.keyboard("{Enter}")
+    expect(control).toHaveAttribute("aria-checked", "true")
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it("prevents labelled switch activation when disabled directly or by a fieldset", async () => {
+    const user = userEvent.setup()
+    const change = vi.fn()
+    const { rerender } = render(<>
+      <Switch id="active-model" checked onCheckedChange={change} disabled />
+      <label htmlFor="active-model">Active model</label>
+    </>)
+    const control = screen.getByRole("switch", { name: "Active model" })
+    await user.click(screen.getByText("Active model"))
+    await user.click(control)
+    expect(control).toBeDisabled()
+    expect(control).toHaveAttribute("aria-checked", "true")
+    expect(change).not.toHaveBeenCalled()
+    rerender(<fieldset disabled>
+      <Switch id="active-model" checked onCheckedChange={change} />
+      <label htmlFor="active-model">Active model</label>
+    </fieldset>)
+    await user.click(screen.getByText("Active model"))
+    await user.click(screen.getByRole("switch"))
+    expect(screen.getByRole("switch")).toBeDisabled()
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true")
+    expect(change).not.toHaveBeenCalled()
+  })
+
   it("generates distinct IDs and associates labels with controls", () => {
     render(<><Field label="Name"><Input /></Field><Field label="Description" optional><Input /></Field></>)
     const name = screen.getByRole("textbox", { name: "Name" })

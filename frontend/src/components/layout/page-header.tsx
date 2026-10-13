@@ -12,8 +12,8 @@ export function PageHeader({ title, description, metadata, accessory }: {
         <h1 className="min-w-0 text-title [overflow-wrap:anywhere]">{title}</h1>
         {accessory}
       </div>
-      {description && <div className="text-caption text-fg-muted">{description}</div>}
-      {metadata && <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-caption text-fg-muted">{metadata}</div>}
+      {description && <div className="min-w-0 text-body text-fg-muted [overflow-wrap:anywhere]">{description}</div>}
+      {metadata && <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 text-caption text-fg-muted [overflow-wrap:anywhere] [&>*]:min-w-0 [&>*]:max-w-full">{metadata}</div>}
     </header>
   )
 }
