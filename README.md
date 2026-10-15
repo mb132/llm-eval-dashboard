@@ -31,11 +31,14 @@ validate templates as you type, and case/model removals use inline confirmation.
 ## Quick start
 
 Requirements: Python 3.13+, Node.js, `uv`, and [just](https://just.systems/).
-For local Ollama, install Ollama and make the default model available:
+For local Ollama, install Ollama and pull a model:
 
 ```bash
 ollama run gemma4:e4b
 ```
+
+Ollama is configured in the web UI (Models page), not through environment
+variables. From Docker, use `http://host.docker.internal:11434` as the base URL.
 
 Create the local environment file and generate a master key for encrypting
 provider credentials:
