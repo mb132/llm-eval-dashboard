@@ -297,13 +297,103 @@ def _key(case: dict[str, Any]) -> tuple[str, str, str | None]:
     return case["input"], case["case_type"], case["security_test_type"]
 
 
+DUPLICATE_ACTIONS = ("skip", "keep", "replace")
+INVALID_POLICIES = ("strict", "valid_only")
+FORBIDDEN_DELIMITERS = ('"', "\n", "\r")
+
+
+@dataclass(frozen=True)
+class ImportOptions:
+    """Type-checked import options shared by preview and commit."""
+
+    destination: dict[str, Any]
+    mapping: dict[str, str | None] | None
+    delimiter: str | None
+    duplicate_action: str
+    invalid_policy: str
+
+
+def validate_options(options: Any) -> ImportOptions:
+    """Validate the untrusted options object, raising ``ImportError`` on bad shapes.
+
+    Unknown mapping targets are ignored (as before); everything else must have
+    the exact shape the import UI sends.
+    """
+    if not isinstance(options, dict):
+        raise ImportError("Import options must be a JSON object.")
+
+    mapping = options.get("mapping")
+    if mapping is not None:
+        if not isinstance(mapping, dict):
+            raise ImportError("Mapping must be an object of target fields to columns.")
+        for target, column in mapping.items():
+            if column is not None and not isinstance(column, str):
+                raise ImportError(
+                    f"Mapping for '{target}' must be a column name or null."
+                )
+
+    delimiter = options.get("delimiter")
+    if delimiter is not None and (
+        not isinstance(delimiter, str)
+        or len(delimiter) != 1
+        or delimiter in FORBIDDEN_DELIMITERS
+    ):
+        raise ImportError(
+            "Delimiter must be a single character other than a quote or line break."
+        )
+
+    duplicate_action = options.get("duplicate_action", "skip")
+    if duplicate_action not in DUPLICATE_ACTIONS:
+        raise ImportError(
+            f"Duplicate action must be one of: {', '.join(DUPLICATE_ACTIONS)}."
+        )
+    invalid_policy = options.get("invalid_policy", "strict")
+    if invalid_policy not in INVALID_POLICIES:
+        raise ImportError(
+            f"Invalid-row policy must be one of: {', '.join(INVALID_POLICIES)}."
+        )
+
+    destination = options.get("destination")
+    if not isinstance(destination, dict) or destination.get("mode") not in (
+        "new",
+        "existing",
+    ):
+        raise ImportError(
+            "Choose whether to create a dataset or add to an existing one."
+        )
+    if destination["mode"] == "existing":
+        dataset_id = destination.get("dataset_id")
+        try:
+            if not isinstance(dataset_id, str):
+                raise ValueError("dataset_id must be a string")
+            UUID(dataset_id)
+        except ValueError as exc:
+            raise ImportError("Choose an existing destination dataset.") from exc
+    else:
+        name = destination.get("name", "")
+        description = destination.get("description")
+        if not isinstance(name, str):
+            raise ImportError("Dataset name must be a string.")
+        if description is not None and not isinstance(description, str):
+            raise ImportError("Dataset description must be a string or null.")
+
+    return ImportOptions(
+        destination=destination,
+        mapping=mapping,
+        delimiter=delimiter,
+        duplicate_action=duplicate_action,
+        invalid_policy=invalid_policy,
+    )
+
+
 async def preview(
     session: AsyncSession, *, file_name: str, content: bytes, options: dict[str, Any]
 ) -> dict[str, Any]:
+    validated = validate_options(options)
     headers, rows, envelope, canonical_csv = parse_source(
-        file_name, content, options.get("delimiter")
+        file_name, content, validated.delimiter
     )
-    mapping = options.get("mapping") or suggested_mapping(headers)
+    mapping = validated.mapping or suggested_mapping(headers)
     mapping = {target: mapping.get(target) for target in TARGETS}
     if mapping["input"] is None or mapping["expected_answer"] is None:
         return {
@@ -315,13 +405,10 @@ async def preview(
             "can_commit": False,
             "message": "Map Input and Expected answer before previewing rows.",
         }
-    destination = options.get("destination", {})
+    destination = validated.destination
     dataset: Dataset | None = None
-    if destination.get("mode") == "existing":
-        try:
-            dataset_id = UUID(str(destination.get("dataset_id")))
-        except ValueError as exc:
-            raise ImportError("Choose an existing destination dataset.") from exc
+    if destination["mode"] == "existing":
+        dataset_id = UUID(destination["dataset_id"])
         dataset = (
             await session.scalars(
                 select(Dataset)
@@ -331,16 +418,12 @@ async def preview(
         ).one_or_none()
         if dataset is None:
             raise DatasetNotFoundError("Dataset not found.")
-    elif destination.get("mode") == "new":
+    else:
         try:
-            normalize_dataset_name(str(destination.get("name", "")))
+            normalize_dataset_name(destination.get("name", ""))
             normalize_description(destination.get("description"))
         except DatasetValidationError as exc:
             raise ImportError(str(exc)) from exc
-    else:
-        raise ImportError(
-            "Choose whether to create a dataset or add to an existing one."
-        )
     encoded = canonical_csv and any(
         isinstance(row.values.get("text_encoding"), str)
         and row.values["text_encoding"].lstrip("'") == "apostrophe-v1"
@@ -356,9 +439,15 @@ async def preview(
     if dataset:
         for item in dataset.test_cases:
             existing[(item.input, item.case_type, item.security_test_type)].append(item)
-    action = options.get("duplicate_action", "skip")
-    valid_only = options.get("invalid_policy") == "valid_only"
+    action = validated.duplicate_action
+    valid_only = validated.invalid_policy == "valid_only"
     seen: dict[tuple[str, str, str | None], int] = {}
+    # Under "replace" the last valid occurrence of a key in the upload wins.
+    last_row_for_key: dict[tuple[str, str, str | None], int] = {}
+    if action == "replace":
+        for source_row, case in parsed:
+            if case is not None:
+                last_row_for_key[_key(case)] = source_row.row_number
     preview_rows: list[dict[str, Any]] = []
     adds = replaces = skips = unchanged = 0
     for source_row, case in parsed:
@@ -382,16 +471,16 @@ async def preview(
         }
         matches = existing[key]
         result["existing_ids"] = [str(item.id) for item in matches]
-        if key in seen:
+        if action == "replace" and last_row_for_key[key] != source_row.row_number:
+            result.update(
+                status="skip",
+                action="skip",
+                reason="A later uploaded duplicate will replace this row.",
+            )
+            skips += 1
+        elif action != "replace" and key in seen:
             if action == "keep":
                 adds += 1
-            elif action == "replace":
-                result.update(
-                    status="skip",
-                    action="skip",
-                    reason="A later uploaded duplicate will replace this row.",
-                )
-                skips += 1
             else:
                 result.update(
                     status="skip",
@@ -501,6 +590,7 @@ async def commit(
     fingerprint: str,
     import_id: UUID,
 ) -> dict[str, Any]:
+    validate_options(options)
     request_digest = hashlib.sha256(
         content + json.dumps(options, sort_keys=True).encode()
     ).hexdigest()
