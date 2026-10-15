@@ -61,6 +61,7 @@ import {
 } from "@/lib/format"
 
 const POLL_INTERVAL_MS = 1_500
+const MAX_POLL_BACKOFF_MS = 10_000
 const RESULT_PAGE_SIZE = 50
 
 export function EvaluationRunPage() {
@@ -84,6 +85,8 @@ export function EvaluationRunPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
   const [search, setSearch] = useState("")
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -106,6 +109,7 @@ export function EvaluationRunPage() {
     setExpanded(new Set())
     setSearch("")
     setError(null)
+    setExportError(null)
   }, [evaluationId])
 
   useEffect(() => {
@@ -117,6 +121,8 @@ export function EvaluationRunPage() {
     }
     let active = true
     let timeoutId: number | undefined
+    let failures = 0
+    let lastStatus: EvaluationRunStatus | null = null
     setIsLoadingMore(false)
 
     async function poll() {
@@ -135,6 +141,8 @@ export function EvaluationRunPage() {
               ])
             : [null, null, null, null]
         if (!active) return
+        failures = 0
+        lastStatus = run.status
         setEvaluation(run)
         setResults(page.items)
         setResultTotal(page.total)
@@ -155,6 +163,15 @@ export function EvaluationRunPage() {
             ? caughtError.message
             : "Could not load the evaluation.",
         )
+        // Keep the last loaded data on screen and keep polling a run that was
+        // still in progress. A failed first load keeps the Retry screen.
+        if (lastStatus === "pending" || lastStatus === "running") {
+          failures += 1
+          timeoutId = window.setTimeout(
+            poll,
+            Math.min(POLL_INTERVAL_MS * 2 ** failures, MAX_POLL_BACKOFF_MS),
+          )
+        }
       } finally {
         if (active) setIsLoading(false)
       }
@@ -192,6 +209,26 @@ export function EvaluationRunPage() {
       )
     } finally {
       if (scope === requestScope.current) setIsLoadingMore(false)
+    }
+  }
+
+  async function exportResults(format: "json" | "csv") {
+    if (isExporting) return
+    setExportError(null)
+    setIsExporting(true)
+    try {
+      await download(
+        `/api/evaluations/${evaluationId}/export?${searchParams.toString()}&format=${format}`,
+        `evaluation-results.${format}`,
+      )
+    } catch (caughtError) {
+      setExportError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not export the results.",
+      )
+    } finally {
+      setIsExporting(false)
     }
   }
 
@@ -238,17 +275,13 @@ export function EvaluationRunPage() {
         Compare on dashboard
       </Link>
       {terminal &&
-        ["json", "csv"].map((format) => (
+        (["json", "csv"] as const).map((format) => (
           <Button
             key={format}
             variant="outline"
             size="sm"
-            onClick={() =>
-              void download(
-                `/api/evaluations/${evaluationId}/export?${searchParams.toString()}&format=${format}`,
-                `evaluation-results.${format}`,
-              )
-            }
+            disabled={isExporting}
+            onClick={() => void exportResults(format)}
           >
             <Download className="size-3.5" aria-hidden="true" />
             {format === "json" ? "Export JSON" : "CSV"}
@@ -320,19 +353,16 @@ export function EvaluationRunPage() {
           {evaluation.failure_message && (
             <ErrorMessage message={evaluation.failure_message} />
           )}
+          {exportError && <ErrorMessage message={exportError} />}
           <div className="grid grid-cols-3 gap-2 md:hidden">
             {terminal &&
-              ["json", "csv"].map((format) => (
+              (["json", "csv"] as const).map((format) => (
                 <Button
                   key={format}
                   variant="outline"
                   className="h-11"
-                  onClick={() =>
-                    void download(
-                      `/api/evaluations/${evaluationId}/export?${searchParams.toString()}&format=${format}`,
-                      `evaluation-results.${format}`,
-                    )
-                  }
+                  disabled={isExporting}
+                  onClick={() => void exportResults(format)}
                 >
                   {format.toUpperCase()}
                 </Button>

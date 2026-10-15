@@ -775,6 +775,64 @@ describe("evaluation execution", () => {
     ).toBeInTheDocument()
   })
 
+  it("keeps polling an active run after a failed poll and shows the error", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      let runCalls = 0
+      fetchMock.mockImplementation(async (input) => {
+        const path = String(input)
+        if (path.includes("/results?"))
+          return jsonResponse({ items: [], total: 3, offset: 0, limit: 50 })
+        runCalls += 1
+        if (runCalls === 2)
+          return jsonResponse({ detail: "Backend temporarily unavailable." }, 503)
+        return jsonResponse({
+          ...completedRun,
+          status: "running",
+          total_requests: 3,
+          completed_requests: runCalls === 1 ? 1 : 2,
+        })
+      })
+      renderApp(`/evaluations/${RUN_ID}`)
+
+      expect(await screen.findByText("1/3")).toBeInTheDocument()
+      await vi.advanceTimersByTimeAsync(1_500)
+      expect(
+        await screen.findByText("Backend temporarily unavailable."),
+      ).toBeInTheDocument()
+      expect(screen.getByText("1/3")).toBeInTheDocument()
+      expect(runCalls).toBe(2)
+
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(await screen.findByText("2/3")).toBeInTheDocument()
+      expect(runCalls).toBe(3)
+      expect(
+        screen.queryByText("Backend temporarily unavailable."),
+      ).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("shows the message when an export fails and clears it on the next attempt", async () => {
+    const user = userEvent.setup()
+    serveCompleted()
+    vi.mocked(download).mockRejectedValueOnce(
+      new Error("Export is too large. Apply filters to reduce the result set."),
+    )
+    renderApp(`/evaluations/${RUN_ID}`)
+    await screen.findByRole("table", { name: "Results" })
+    await user.click(screen.getByRole("button", { name: "Export JSON" }))
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Export is too large. Apply filters to reduce the result set.",
+    )
+    await user.click(screen.getByRole("button", { name: "Export JSON" }))
+    await waitFor(() =>
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+    )
+    expect(download).toHaveBeenCalledTimes(2)
+  })
+
   it("renders stored outputs as text and loads further completed results", async () => {
     const user = userEvent.setup()
     const unsafe = '<img src="x" onerror="alert(1)">'
