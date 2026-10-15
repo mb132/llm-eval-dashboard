@@ -331,6 +331,112 @@ def test_openrouter_long_reset_returns_retry_later_without_sending_again(
     assert calls == 1
 
 
+def reset_openrouter_state(monkeypatch) -> None:
+    for name in (
+        "_openrouter_locks",
+        "_openrouter_conditions",
+        "_openrouter_active",
+        "_openrouter_concurrency_limits",
+        "_openrouter_rpm_limits",
+        "_openrouter_next_slot",
+        "_openrouter_cooldown",
+    ):
+        monkeypatch.setattr(playground, name, {})
+
+
+def snapshot_model(max_concurrent_requests: int | None) -> ModelConfiguration:
+    model = model_configuration("openrouter", api_key="test-secret")
+    model.max_concurrent_requests = max_concurrent_requests
+    return model
+
+
+def run_concurrent_requests(model, count: int) -> int:
+    """Run `count` simultaneous requests and return the peak in-flight count."""
+    in_flight = 0
+    peak = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}]},
+            request=request,
+        )
+
+    async def run() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await asyncio.gather(
+                *(
+                    generate_prompt(model, "Hello", None, client=client)
+                    for _ in range(count)
+                )
+            )
+
+    asyncio.run(run())
+    return peak
+
+
+def test_stale_snapshot_does_not_lower_published_concurrency_limit(
+    monkeypatch,
+) -> None:
+    reset_openrouter_state(monkeypatch)
+    key = (1, "test-model")
+
+    async def run() -> None:
+        playground.configure_openrouter_model_limits(1, "test-model", [], [8])
+        assert playground._openrouter_concurrency_limits[key] == 8
+        async with playground._openrouter_request_slot(snapshot_model(1)):
+            assert playground._openrouter_concurrency_limits[key] == 8
+        assert playground._openrouter_concurrency_limits[key] == 8
+        assert playground._openrouter_active[key] == 0
+
+    asyncio.run(run())
+
+
+def test_stale_snapshot_does_not_restore_a_cleared_concurrency_limit(
+    monkeypatch,
+) -> None:
+    reset_openrouter_state(monkeypatch)
+    key = (1, "test-model")
+
+    async def run() -> None:
+        playground.configure_openrouter_model_limits(1, "test-model", [], [1])
+        playground.configure_openrouter_model_limits(1, "test-model", [], [])
+        async with playground._openrouter_request_slot(snapshot_model(1)):
+            assert key not in playground._openrouter_concurrency_limits
+        assert key not in playground._openrouter_concurrency_limits
+
+    asyncio.run(run())
+    # Later traffic without its own limit is no longer throttled.
+    assert run_concurrent_requests(snapshot_model(None), 3) == 3
+
+
+def test_snapshot_limit_still_serializes_its_own_requests(monkeypatch) -> None:
+    reset_openrouter_state(monkeypatch)
+    assert run_concurrent_requests(snapshot_model(1), 3) == 1
+    assert playground._openrouter_concurrency_limits == {}
+    assert playground._openrouter_active.get((1, "test-model"), 0) == 0
+
+
+def test_snapshot_limit_applies_under_a_higher_published_limit(monkeypatch) -> None:
+    reset_openrouter_state(monkeypatch)
+    playground.configure_openrouter_model_limits(1, "test-model", [], [8])
+    assert run_concurrent_requests(snapshot_model(1), 3) == 1
+    assert playground._openrouter_concurrency_limits[(1, "test-model")] == 8
+    assert playground._openrouter_active[(1, "test-model")] == 0
+
+
+def test_published_limit_applies_to_snapshots_without_their_own(monkeypatch) -> None:
+    reset_openrouter_state(monkeypatch)
+    playground.configure_openrouter_model_limits(1, "test-model", [], [2])
+    assert run_concurrent_requests(snapshot_model(None), 5) == 2
+    assert playground._openrouter_active[(1, "test-model")] == 0
+
+
 def test_openrouter_confirmed_daily_quota_is_not_retried() -> None:
     model = model_configuration(
         "openrouter", model_name="test-model:free", api_key="test-secret"
