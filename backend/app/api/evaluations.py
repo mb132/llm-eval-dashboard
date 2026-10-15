@@ -47,6 +47,7 @@ from ..services.evaluation_execution import (
     create_evaluation_run,
     execute_evaluation_run,
     get_evaluation_run,
+    list_all_evaluation_results,
     list_evaluation_results,
     list_evaluation_runs,
 )
@@ -1139,23 +1140,9 @@ async def export_evaluation_results(
             outcome=outcome,
             case_type=case_type,
         )
-        first = await list_evaluation_results(
-            session,
-            evaluation_id,
-            offset=0,
-            limit=MAX_RESULT_PAGE_SIZE,
-            filters=filters,
+        items = await list_all_evaluation_results(
+            session, evaluation_id, filters=filters
         )
-        items = list(first.items)
-        while len(items) < first.total:
-            page = await list_evaluation_results(
-                session,
-                evaluation_id,
-                offset=len(items),
-                limit=MAX_RESULT_PAGE_SIZE,
-                filters=filters,
-            )
-            items.extend(page.items)
         rows = [_result_response(item).model_dump(mode="json") for item in items]
     except EvaluationRunNotFoundError as exc:
         _raise_evaluation_error(exc)

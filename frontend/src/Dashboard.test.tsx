@@ -621,6 +621,51 @@ describe("dashboard", () => {
     ).toHaveLength(2)
   })
 
+  it("keeps the selected run's summaries when loading more runs", async () => {
+    const user = userEvent.setup()
+    const older = { ...run, id: "older-run", dataset_name: "Older dataset" }
+    const original = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input) === "/api/evaluations?offset=0&limit=20")
+        return jsonResponse({ items: [run], total: 2, offset: 0, limit: 20 })
+      if (String(input) === "/api/evaluations?offset=1&limit=20")
+        return jsonResponse({ items: [older], total: 2, offset: 1, limit: 20 })
+      return original(input, init)
+    })
+    const summaryCalls = () =>
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes("-summary"),
+      ).length
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+    await screen.findByText("exact 70.0% · 3 scored")
+    expect(summaryCalls()).toBe(4)
+
+    await user.click(screen.getByRole("button", { name: "Load 1 more" }))
+    expect(
+      await screen.findByRole("link", { name: /Older dataset/ }),
+    ).toBeInTheDocument()
+
+    expect(screen.getByLabelText("Run overview")).toBeInTheDocument()
+    expect(screen.getByText("exact 70.0% · 3 scored")).toBeInTheDocument()
+    expect(screen.queryByRole("status")).not.toBeInTheDocument()
+    expect(summaryCalls()).toBe(4)
+    expect(screen.getAllByRole("combobox", { name: "Run" })[0]).toHaveValue(
+      RUN_ID,
+    )
+
+    await user.selectOptions(
+      screen.getAllByRole("combobox", { name: "Run" })[0],
+      older.id,
+    )
+    await screen.findByRole("heading", { name: "Older dataset evaluation" })
+    await screen.findByText("exact 70.0% · 3 scored")
+    expect(summaryCalls()).toBe(8)
+  })
+
   it("shows an active deep link without fetching summaries", async () => {
     const original = fetchMock.getMockImplementation()!
     fetchMock.mockImplementation(async (input, init) =>

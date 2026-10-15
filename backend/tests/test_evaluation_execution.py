@@ -3,6 +3,8 @@
 import asyncio
 from uuid import UUID
 
+import httpx
+import pytest
 from app.api import evaluations
 from app.models import EvaluationResult, ModelConfiguration, ProviderConfiguration
 from app.services import evaluation_execution
@@ -913,3 +915,214 @@ def test_execution_endpoints_return_not_found(prompt_client: TestClient) -> None
         prompt_client.get(f"/api/evaluations/{missing_id}/cost-summary").status_code
         == 404
     )
+
+
+def test_storage_error_for_one_result_does_not_abort_other_results(
+    prompt_client: TestClient,
+    evaluation_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Record a result whose success could not be stored and keep the run going."""
+    disable_background_execution(monkeypatch)
+    version_id, dataset_id = create_inputs(prompt_client)
+    run = prompt_client.post(
+        "/api/evaluations", json=configuration(version_id, dataset_id)
+    ).json()
+    listed = prompt_client.get(f"/api/evaluations/{run['id']}/results").json()["items"]
+    first_result_id = listed[0]["id"]
+
+    async def successful_provider(prompt: str, model: str, **kwargs) -> OllamaResult:
+        return OllamaResult(
+            model=model,
+            response="Paris" if "France" in prompt else "4",
+            latency_ms=12,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+    store_success = evaluation_execution._store_result_success
+
+    async def flaky_store_success(session_factory, result_id, outcome) -> None:
+        if str(result_id) == first_result_id:
+            raise RuntimeError("database-password-should-not-leak")
+        await store_success(session_factory, result_id, outcome)
+
+    monkeypatch.setattr(
+        evaluation_execution, "_store_result_success", flaky_store_success
+    )
+    asyncio.run(
+        execute_evaluation_run(
+            UUID(run["id"]),
+            session_factory=evaluation_session_factory,
+            provider_call=successful_provider,
+            semaphore=asyncio.Semaphore(1),
+        )
+    )
+
+    persisted = prompt_client.get(f"/api/evaluations/{run['id']}").json()
+    assert persisted["status"] == "completed"
+    assert persisted["completed_requests"] == 2
+    assert persisted["successful_requests"] == 1
+    assert persisted["failed_requests"] == 1
+    assert "database-password" not in str(persisted)
+    results = prompt_client.get(f"/api/evaluations/{run['id']}/results").json()["items"]
+    assert [item["status"] for item in results] == ["failed", "succeeded"]
+    assert results[0]["error_code"] == "storage_error"
+    assert results[0]["error_message"] == "The result could not be saved."
+    assert results[0]["generated_output"] is None
+    assert "database-password" not in str(results)
+
+
+def test_unrecordable_storage_error_fails_run_without_aborting_siblings(
+    prompt_client: TestClient,
+    evaluation_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Fail the run consistently when a result cannot be persisted at all."""
+    disable_background_execution(monkeypatch)
+    version_id, dataset_id = create_inputs(prompt_client)
+    run = prompt_client.post(
+        "/api/evaluations", json=configuration(version_id, dataset_id)
+    ).json()
+    listed = prompt_client.get(f"/api/evaluations/{run['id']}/results").json()["items"]
+    first_result_id = listed[0]["id"]
+
+    async def successful_provider(prompt: str, model: str, **kwargs) -> OllamaResult:
+        return OllamaResult(
+            model=model,
+            response="Paris",
+            latency_ms=12,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+    store_success = evaluation_execution._store_result_success
+    store_failure = evaluation_execution._store_result_failure
+
+    async def flaky_store_success(session_factory, result_id, outcome) -> None:
+        if str(result_id) == first_result_id:
+            raise RuntimeError("database is locked")
+        await store_success(session_factory, result_id, outcome)
+
+    async def flaky_store_failure(session_factory, result_id, **kwargs) -> None:
+        if str(result_id) == first_result_id:
+            raise RuntimeError("database is locked")
+        await store_failure(session_factory, result_id, **kwargs)
+
+    monkeypatch.setattr(
+        evaluation_execution, "_store_result_success", flaky_store_success
+    )
+    monkeypatch.setattr(
+        evaluation_execution, "_store_result_failure", flaky_store_failure
+    )
+    asyncio.run(
+        execute_evaluation_run(
+            UUID(run["id"]),
+            session_factory=evaluation_session_factory,
+            provider_call=successful_provider,
+            semaphore=asyncio.Semaphore(1),
+        )
+    )
+
+    persisted = prompt_client.get(f"/api/evaluations/{run['id']}").json()
+    assert persisted["status"] == "failed"
+    results = prompt_client.get(f"/api/evaluations/{run['id']}/results").json()["items"]
+    assert results[1]["status"] == "succeeded"
+    assert results[0]["status"] == "failed"
+    assert results[0]["error_code"] == "execution_error"
+
+
+def test_cancellation_during_result_storage_propagates(
+    evaluation_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Never swallow task cancellation while handling storage failures."""
+    snapshot = evaluation_execution._ExecutionSnapshot(
+        result_id=UUID("87ad64a0-6206-4921-a102-92b75fc25188"),
+        provider="ollama",
+        model="test-model:latest",
+        system_prompt=None,
+        prompt="Capital of France?",
+        max_output_tokens=16,
+        configuration=evaluation_execution._ModelConfigurationSnapshot(
+            id=1,
+            display_name="Local model",
+            provider_id=1,
+            provider_kind="ollama",
+            provider_base_url=None,
+            provider_api_key_ciphertext=None,
+            model_name="test-model:latest",
+            parameters={},
+        ),
+    )
+
+    async def successful_provider(prompt: str, model: str, **kwargs) -> OllamaResult:
+        return OllamaResult(
+            model=model, response="Paris", latency_ms=1, input_tokens=1, output_tokens=1
+        )
+
+    async def cancelled_store(*args, **kwargs) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(evaluation_execution, "_store_result_success", cancelled_store)
+
+    async def execute() -> None:
+        async with httpx.AsyncClient() as client:
+            await evaluation_execution._execute_result(
+                snapshot,
+                session_factory=evaluation_session_factory,
+                provider_call=successful_provider,
+                client=client,
+                semaphore=asyncio.Semaphore(1),
+            )
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(execute())
+
+
+def test_export_returns_every_result_beyond_one_page(
+    prompt_client: TestClient,
+    evaluation_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Export all matching rows in order without paging through the listing API."""
+    disable_background_execution(monkeypatch)
+    version_id, dataset_id = create_inputs(prompt_client)
+    for index in range(20):
+        prompt_client.post(
+            f"/api/datasets/{dataset_id}/test-cases",
+            json={"input": f"Question {index}?", "expected_answer": "Paris"},
+        )
+    run = prompt_client.post(
+        "/api/evaluations", json=configuration(version_id, dataset_id, repetitions=5)
+    ).json()
+    assert run["total_requests"] == 110
+    assert prompt_client.get(f"/api/evaluations/{run['id']}/export").status_code == 409
+
+    async def successful_provider(prompt: str, model: str, **kwargs) -> OllamaResult:
+        return OllamaResult(
+            model=model, response="Paris", latency_ms=1, input_tokens=1, output_tokens=1
+        )
+
+    asyncio.run(
+        execute_evaluation_run(
+            UUID(run["id"]),
+            session_factory=evaluation_session_factory,
+            provider_call=successful_provider,
+        )
+    )
+
+    response = prompt_client.get(f"/api/evaluations/{run['id']}/export?format=json")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 110
+    assert {item["status"] for item in payload["results"]} == {"succeeded"}
+    sequence_numbers = [item["sequence_number"] for item in payload["results"]]
+    assert sequence_numbers == sorted(sequence_numbers)
+    assert len(set(sequence_numbers)) == 110
+    assert all(item["quality_scores"] for item in payload["results"])
+
+    csv_response = prompt_client.get(f"/api/evaluations/{run['id']}/export?format=csv")
+    assert csv_response.status_code == 200
+    missing_id = "87ad64a0-6206-4921-a102-92b75fc25188"
+    assert prompt_client.get(f"/api/evaluations/{missing_id}/export").status_code == 404

@@ -1,5 +1,5 @@
 import { ArrowUpRight, LoaderCircle } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import {
   getEvaluationCostSummary,
@@ -74,6 +74,8 @@ export function DashboardPage() {
   const [isLoadingSummary, setIsLoadingSummary] = useState(false)
   const [showAllRecent, setShowAllRecent] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
+  const runPageRef = useRef<EvaluationRunPage | null>(null)
+  const hasRunPage = runPage !== null
 
   useEffect(() => {
     let active = true
@@ -99,18 +101,27 @@ export function DashboardPage() {
   }, [retryKey])
 
   useEffect(() => {
-    if (!runPage || historyError) return
-    if (!selectedRunId) {
-      const defaultRun =
-        runPage.items.find((run) => run.status === "completed") ??
-        runPage.items.find((run) => run.status === "failed")
-      if (defaultRun) {
-        const params = new URLSearchParams(searchParams)
-        params.set("run", defaultRun.id)
-        setSearchParams(params, { replace: true })
-      }
-      return
+    runPageRef.current = runPage
+  }, [runPage])
+
+  useEffect(() => {
+    if (!runPage || historyError || selectedRunId) return
+    const defaultRun =
+      runPage.items.find((run) => run.status === "completed") ??
+      runPage.items.find((run) => run.status === "failed")
+    if (defaultRun) {
+      const params = new URLSearchParams(searchParams)
+      params.set("run", defaultRun.id)
+      setSearchParams(params, { replace: true })
     }
+  }, [historyError, runPage, searchParams, selectedRunId, setSearchParams])
+
+  // Depends on hasRunPage rather than runPage so that loading more runs, or
+  // changing an unrelated search param, does not clear or re-fetch the
+  // summaries of the unchanged selected run.
+  useEffect(() => {
+    if (!hasRunPage || !selectedRunId) return
+    const runId = selectedRunId
 
     let active = true
     setIsLoadingSummary(true)
@@ -121,8 +132,8 @@ export function DashboardPage() {
     async function loadSelection() {
       try {
         const run =
-          runPage?.items.find((item) => item.id === selectedRunId) ??
-          (await getEvaluationRun(selectedRunId ?? ""))
+          runPageRef.current?.items.find((item) => item.id === runId) ??
+          (await getEvaluationRun(runId))
         if (!active) return
         setSelectedRun(run)
         if (run.status === "pending" || run.status === "running") return
@@ -146,7 +157,7 @@ export function DashboardPage() {
     return () => {
       active = false
     }
-  }, [historyError, runPage, selectedRunId, setSearchParams, searchParams])
+  }, [hasRunPage, retryKey, selectedRunId])
 
   const terminalRuns = runPage?.items.filter(isTerminal) ?? []
   const activeRuns = runPage?.items.filter((run) => !isTerminal(run)) ?? []
