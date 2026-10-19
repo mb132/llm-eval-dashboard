@@ -12,6 +12,7 @@ import httpx
 from sqlalchemy import and_, case, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql.elements import ColumnElement
 
 from ..database import SessionFactory
 from ..models import (
@@ -477,23 +478,12 @@ async def list_evaluation_runs(
     )
 
 
-async def list_evaluation_results(
-    session: AsyncSession,
-    evaluation_id: UUID,
-    *,
-    offset: int,
-    limit: int,
-    filters: ResultFilters | None = None,
-) -> ResultPage:
-    """Return one bounded page of result snapshots in execution order."""
-    if await session.get(EvaluationRun, evaluation_id) is None:
-        raise EvaluationRunNotFoundError("Evaluation not found.")
-    base_conditions = [EvaluationResult.evaluation_id == evaluation_id]
-    unfiltered_total = await session.scalar(
-        select(func.count(EvaluationResult.id)).where(*base_conditions)
-    )
-    conditions = [*base_conditions]
+def _result_conditions(
+    evaluation_id: UUID, filters: ResultFilters | None
+) -> list[ColumnElement[bool]]:
+    """Build the SQL predicates shared by paged listing and full export."""
     filters = filters or ResultFilters()
+    conditions = [EvaluationResult.evaluation_id == evaluation_id]
     if filters.model_ids:
         conditions.append(EvaluationResult.model_id.in_(filters.model_ids))
     if filters.prompt_version_ids:
@@ -562,6 +552,25 @@ async def list_evaluation_results(
                     ),
                 )
             )
+    return conditions
+
+
+async def list_evaluation_results(
+    session: AsyncSession,
+    evaluation_id: UUID,
+    *,
+    offset: int,
+    limit: int,
+    filters: ResultFilters | None = None,
+) -> ResultPage:
+    """Return one bounded page of result snapshots in execution order."""
+    if await session.get(EvaluationRun, evaluation_id) is None:
+        raise EvaluationRunNotFoundError("Evaluation not found.")
+    base_conditions = [EvaluationResult.evaluation_id == evaluation_id]
+    unfiltered_total = await session.scalar(
+        select(func.count(EvaluationResult.id)).where(*base_conditions)
+    )
+    conditions = _result_conditions(evaluation_id, filters)
     total = await session.scalar(
         select(func.count(EvaluationResult.id)).where(*conditions)
     )
@@ -626,6 +635,24 @@ async def list_evaluation_results(
             has_uncategorized_category=has_uncategorized_category,
         ),
     )
+
+
+async def list_all_evaluation_results(
+    session: AsyncSession,
+    evaluation_id: UUID,
+    *,
+    filters: ResultFilters | None = None,
+) -> list[EvaluationResult]:
+    """Return every matching result in execution order using a single query."""
+    if await session.get(EvaluationRun, evaluation_id) is None:
+        raise EvaluationRunNotFoundError("Evaluation not found.")
+    statement = (
+        select(EvaluationResult)
+        .where(*_result_conditions(evaluation_id, filters))
+        .order_by(EvaluationResult.sequence_number)
+        .options(selectinload(EvaluationResult.quality_scores))
+    )
+    return list(await session.scalars(statement))
 
 
 async def execute_evaluation_run(
@@ -746,7 +773,11 @@ async def _execute_result(
     semaphore: asyncio.Semaphore,
 ) -> None:
     async with semaphore:
-        await _mark_result_running(session_factory, snapshot.result_id)
+        try:
+            await _mark_result_running(session_factory, snapshot.result_id)
+        except Exception as exc:
+            await _record_storage_error(session_factory, snapshot.result_id, exc)
+            return
         try:
             if snapshot.configuration is None:
                 raise PlaygroundConfigurationError(
@@ -792,13 +823,58 @@ async def _execute_result(
             error_code = "unexpected_error"
             error_message = "The provider request failed unexpectedly."
         else:
-            await _store_result_success(session_factory, snapshot.result_id, outcome)
+            try:
+                await _store_result_success(
+                    session_factory, snapshot.result_id, outcome
+                )
+            except Exception as exc:
+                await _record_storage_error(session_factory, snapshot.result_id, exc)
             return
-        await _store_result_failure(
+        await _store_result_failure_safely(
             session_factory,
             snapshot.result_id,
             error_code=error_code,
             error_message=error_message,
+        )
+
+
+async def _record_storage_error(
+    session_factory: async_sessionmaker[AsyncSession],
+    result_id: UUID,
+    exc: Exception,
+) -> None:
+    """Record a result whose persistence failed without disturbing sibling results."""
+    logger.error(
+        "Evaluation result %s could not be stored: %s", result_id, type(exc).__name__
+    )
+    await _store_result_failure_safely(
+        session_factory,
+        result_id,
+        error_code="storage_error",
+        error_message="The result could not be saved.",
+    )
+
+
+async def _store_result_failure_safely(
+    session_factory: async_sessionmaker[AsyncSession],
+    result_id: UUID,
+    *,
+    error_code: str,
+    error_message: str,
+) -> None:
+    """Store a failed result, logging instead of raising if that also fails."""
+    try:
+        await _store_result_failure(
+            session_factory,
+            result_id,
+            error_code=error_code,
+            error_message=error_message,
+        )
+    except Exception as exc:
+        logger.error(
+            "Evaluation result %s failure could not be stored: %s",
+            result_id,
+            type(exc).__name__,
         )
 
 
@@ -890,7 +966,7 @@ async def _store_result_failure(
     now = utc_now()
     async with session_factory() as session, session.begin():
         result = await session.get(EvaluationResult, result_id)
-        if result is None or result.status != "running":
+        if result is None or result.status not in ("pending", "running"):
             return
         result.status = "failed"
         result.error_code = error_code[:50]

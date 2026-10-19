@@ -381,14 +381,21 @@ async def _openrouter_request_slot(model: ModelConfiguration):
     if delay > 0:
         await asyncio.sleep(delay)
     condition = _openrouter_conditions.setdefault(key, asyncio.Condition())
-    maximum = model.max_concurrent_requests
     acquired = False
-    if maximum is not None:
-        async with condition:
-            current = _openrouter_concurrency_limits.get(key)
-            _openrouter_concurrency_limits[key] = (
-                maximum if current is None else min(current, maximum)
+
+    def effective_limit() -> int | None:
+        # Never write this request's snapshot value back into the published
+        # limit: runs hold older model snapshots and would undo later edits.
+        limits = [
+            value
+            for value in (
+                _openrouter_concurrency_limits.get(key),
+                model.max_concurrent_requests,
             )
+            if value is not None
+        ]
+        return min(limits) if limits else None
+
     while True:
         cooldown_delay = (
             max(
@@ -402,10 +409,8 @@ async def _openrouter_request_slot(model: ModelConfiguration):
             await asyncio.sleep(cooldown_delay)
             continue
         async with condition:
-            while (
-                key in _openrouter_concurrency_limits
-                and _openrouter_active.get(key, 0)
-                >= _openrouter_concurrency_limits[key]
+            while (limit := effective_limit()) is not None and (
+                _openrouter_active.get(key, 0) >= limit
             ):
                 await condition.wait()
             cooldown_delay = (
@@ -416,7 +421,7 @@ async def _openrouter_request_slot(model: ModelConfiguration):
                 - monotonic()
             )
             if cooldown_delay <= 0:
-                if key in _openrouter_concurrency_limits:
+                if effective_limit() is not None:
                     _openrouter_active[key] = _openrouter_active.get(key, 0) + 1
                     acquired = True
                 break

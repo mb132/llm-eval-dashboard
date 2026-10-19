@@ -1,11 +1,4 @@
-import {
-  AlertCircle,
-  CheckCircle2,
-  Layers3,
-  LoaderCircle,
-  RefreshCw,
-} from "lucide-react"
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 
 import {
@@ -16,60 +9,98 @@ import {
   type EvaluationOptions,
   type EvaluationPreview,
 } from "@/api/evaluations"
+import { listModels, type ModelConfiguration } from "@/api/models"
+import { PageFrame } from "@/components/layout/page-frame"
+import { PageHeader } from "@/components/layout/page-header"
 import { Alert } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
+import { OptionList, SelectableRow } from "@/components/ui/option-list"
+import { SegmentedControl } from "@/components/ui/segmented-control"
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
+import { StepPanel } from "@/components/ui/step-panel"
+import { formatInt } from "@/lib/format"
+
+const breadcrumbs = [{ label: "Runs", to: "/evaluations/history" }, { label: "new" }]
+const steps = ["Models", "Prompt versions", "Dataset", "Repetitions"]
 
 export function EvaluationPage() {
   const navigate = useNavigate()
   const [options, setOptions] = useState<EvaluationOptions | null>(null)
+  const [metadata, setMetadata] = useState<ModelConfiguration[]>([])
+  const [metadataError, setMetadataError] = useState<string | null>(null)
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([])
-  const [selectedPromptVersionIds, setSelectedPromptVersionIds] = useState<
-    string[]
-  >([])
+  const [selectedPromptVersionIds, setSelectedPromptVersionIds] = useState<string[]>([])
   const [selectedDatasetId, setSelectedDatasetId] = useState("")
   const [repetitions, setRepetitions] = useState("1")
-  const [preview, setPreview] = useState<EvaluationPreview | null>(null)
+  const [preview, setPreview] = useState<{ key: string; result: EvaluationPreview } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isPreviewing, setIsPreviewing] = useState(false)
   const [isStarting, setIsStarting] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [startError, setStartError] = useState<string | null>(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const [previewAttempt, setPreviewAttempt] = useState(0)
+  const generation = useRef(0)
+  const mounted = useRef(true)
+  const startRequest = useRef(0)
 
   useEffect(() => {
-    let active = true
-    getEvaluationOptions()
-      .then((result) => {
-        if (!active) return
-        setOptions(result)
-        if (result.models.length === 1) setSelectedModelIds([result.models[0].id])
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setLoadError(
-            error instanceof Error
-              ? error.message
-              : "Could not load evaluation options.",
-          )
-        }
-      })
-      .finally(() => {
-        if (active) setIsLoading(false)
-      })
+    mounted.current = true
     return () => {
-      active = false
+      mounted.current = false
+      startRequest.current += 1
     }
   }, [])
 
+  useEffect(() => {
+    let active = true
+    Promise.allSettled([getEvaluationOptions(), listModels()]).then(([optionResult, modelResult]) => {
+      if (!active) return
+      if (optionResult.status === "fulfilled") {
+        setOptions(optionResult.value)
+        if (optionResult.value.models.length === 1) setSelectedModelIds([optionResult.value.models[0].id])
+      } else {
+        setLoadError(errorMessage(optionResult.reason, "Could not load evaluation options."))
+      }
+      if (modelResult.status === "fulfilled") {
+        setMetadata(modelResult.value)
+        setMetadataError(null)
+      } else {
+        setMetadataError("Model availability and pricing metadata could not be loaded. Pricing is unknown where no price warning is provided.")
+      }
+      setIsLoading(false)
+    })
+    return () => { active = false }
+  }, [loadAttempt])
+
+  const models = useMemo(() => {
+    const available = (options?.models ?? []).map((model) => {
+      const detail = metadata.find((entry) => String(entry.id) === model.id)
+      return {
+        ...model, disabled: false, reason: null as string | null,
+        price: model.pricing_stale || detail?.pricing?.stale ? "stale price" : model.pricing_unavailable || (detail && !detail.pricing) ? "no price" : detail?.pricing ? "priced" : "price unknown"
+      }
+    })
+    for (const detail of metadata) {
+      if (!available.some((model) => model.id === String(detail.id))) {
+        available.push({
+          id: String(detail.id), name: detail.display_name, model_name: detail.model_name,
+          provider: detail.provider.kind, disabled: true,
+          reason: detail.unavailable_reason ?? (detail.active ? "Not available for evaluation." : "Inactive model."),
+          price: detail.pricing?.stale ? "stale price" : detail.pricing ? "priced" : "no price"
+        })
+      }
+    }
+    return available
+  }, [options, metadata])
   const promptGroups = useMemo(() => {
     const groups = new Map<string, EvaluationOptions["prompt_versions"]>()
     for (const version of options?.prompt_versions ?? []) {
@@ -79,476 +110,289 @@ export function EvaluationPage() {
     }
     return [...groups.values()]
   }, [options])
+  const configuration: EvaluationConfiguration = {
+    model_ids: selectedModelIds, prompt_version_ids: selectedPromptVersionIds,
+    dataset_id: selectedDatasetId, repetitions: Number(repetitions),
+  }
+  const selectionKey = JSON.stringify(configuration)
+  const complete = selectedModelIds.length > 0 && selectedPromptVersionIds.length > 0 && Boolean(selectedDatasetId)
+    && Number.isInteger(configuration.repetitions) && configuration.repetitions >= 1 && configuration.repetitions <= 5
+  const testCases = options?.datasets.find((dataset) => dataset.id === selectedDatasetId)?.test_case_count ?? 0
+  const total = selectedModelIds.length * selectedPromptVersionIds.length * testCases * Number(repetitions)
+  const valid = complete && preview?.key === selectionKey && !isPreviewing && !previewError
 
-  const repetitionCount = Number(repetitions)
-  const configurationIsComplete =
-    selectedModelIds.length > 0 &&
-    selectedPromptVersionIds.length > 0 &&
-    Boolean(selectedDatasetId) &&
-    Number.isInteger(repetitionCount) &&
-    repetitionCount >= 1 &&
-    repetitionCount <= 5
+  useEffect(() => {
+    if (!complete) return
+    let active = true
+    const currentGeneration = generation.current
+    const timer = window.setTimeout(() => {
+      setIsPreviewing(true)
+      previewEvaluation(JSON.parse(selectionKey) as EvaluationConfiguration).then((result) => {
+        if (active && generation.current === currentGeneration) setPreview({ key: selectionKey, result })
+      }).catch((error: unknown) => {
+        if (active && generation.current === currentGeneration) setPreviewError(errorMessage(error, "Could not validate the configuration."))
+      }).finally(() => {
+        if (active && generation.current === currentGeneration) setIsPreviewing(false)
+      })
+    }, 300)
+    return () => { active = false; window.clearTimeout(timer) }
+  }, [complete, selectionKey, previewAttempt])
 
-  function selectionChanged(callback: () => void) {
-    callback()
+  function change(callback: () => void) {
+    generation.current += 1
     setPreview(null)
     setPreviewError(null)
     setStartError(null)
+    setIsPreviewing(false)
+    callback()
   }
-
+  function toggle(id: string, selected: string[], update: (ids: string[]) => void) {
+    change(() => update(selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id]))
+  }
   async function handleStart() {
-    if (!preview || isStarting) return
+    if (!valid || !preview || isStarting) return
     setIsStarting(true)
     setStartError(null)
+    const request = ++startRequest.current
     try {
-      const evaluation = await startEvaluation({
-        model_ids: preview.model_ids,
-        prompt_version_ids: preview.prompt_version_ids,
-        dataset_id: preview.dataset_id,
-        repetitions: preview.repetitions,
-      })
-      navigate(`/evaluations/${evaluation.id}`)
+      const result = await startEvaluation(JSON.parse(preview.key) as EvaluationConfiguration)
+      if (!mounted.current || request !== startRequest.current) return
+      navigate(`/evaluations/${result.id}`)
     } catch (error) {
-      setStartError(
-        error instanceof Error ? error.message : "Could not start the evaluation.",
-      )
+      if (!mounted.current || request !== startRequest.current) return
+      setStartError(errorMessage(error, "Could not start the evaluation."))
       setIsStarting(false)
     }
   }
-
-  function toggleSelection(
-    id: string,
-    selectedIds: string[],
-    setSelectedIds: (ids: string[]) => void,
-  ) {
-    selectionChanged(() =>
-      setSelectedIds(
-        selectedIds.includes(id)
-          ? selectedIds.filter((selectedId) => selectedId !== id)
-          : [...selectedIds, id],
-      ),
-    )
-  }
-
-  async function handlePreview(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!configurationIsComplete) return
-    const configuration: EvaluationConfiguration = {
-      model_ids: selectedModelIds,
-      prompt_version_ids: selectedPromptVersionIds,
-      dataset_id: selectedDatasetId,
-      repetitions: repetitionCount,
-    }
-    setIsPreviewing(true)
-    setPreviewError(null)
-    try {
-      setPreview(await previewEvaluation(configuration))
-    } catch (error) {
-      setPreview(null)
-      setPreviewError(
-        error instanceof Error
-          ? error.message
-          : "Could not validate the configuration.",
-      )
-    } finally {
-      setIsPreviewing(false)
-    }
-  }
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <LoaderCircle className="size-4 animate-spin" />
-        Loading evaluation options…
-      </div>
-    )
-  }
-
-  if (loadError || !options) {
-    return (
-      <div className="mx-auto max-w-2xl space-y-6">
-        <PageHeader />
-        <ErrorMessage message={loadError ?? "Could not load evaluation options."} />
-      </div>
-    )
-  }
+  const status = valid ? "✓ valid" : previewError ? "✕ invalid" : complete ? "Validating…" : "Incomplete"
+  const validationMessage = valid
+    ? "Configuration valid"
+    : isPreviewing
+      ? "Validating configuration…"
+      : complete && !previewError
+        ? "Waiting to validate configuration…"
+        : !complete
+          ? "Choose models, prompt versions and a dataset to start."
+          : null
+  const empty = (title: string, to: string, label: string) => <EmptyState title={title} action={<LinkText to={to}>{label}</LinkText>} />
 
   return (
-    <div className="space-y-8">
-      <PageHeader />
-      <form
-        className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]"
-        onSubmit={handlePreview}
-        noValidate
-      >
-        <div className="space-y-6">
-          <SelectionCard
-            step="1"
-            title="Models"
-            description="Choose one or more models to compare."
+    <PageFrame breadcrumbs={breadcrumbs} mobileTitle="New evaluation">
+      <PageHeader
+        title="New evaluation"
+        description="Combine models, immutable prompt versions, and one reusable dataset."
+      />
+      {isLoading ? (
+        <div className="space-y-5">
+          {steps.map((title, index) => <StepPanel key={title} step={index + 1} title={title} padded={false}><LoadingState
+            label={index === 0 ? "Loading evaluation options…" : `Loading ${title.toLowerCase()}…`}
+          /></StepPanel>)}
+        </div>
+      ) : loadError || !options ? (
+        <ErrorState
+          message={loadError ?? "Could not load evaluation options."}
+          onRetry={() => { setLoadError(null); setIsLoading(true); setLoadAttempt((value) => value + 1) }}
+        />
+      ) : (
+        <>
+          <a
+            href="#run-summary"
+            className="flex min-h-11 flex-wrap items-center gap-2 rounded-lg border border-line bg-panel px-4 py-3 font-mono text-data focus-visible:outline-2 focus-visible:outline-ring xl:hidden"
           >
-            {options.models.length === 0 ? (
-              <EmptySelection>
-                No active runnable models are available. Add or activate one on
-                the <LinkText to="/models">Models page</LinkText> before creating
-                an evaluation.
-              </EmptySelection>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {options.models.map((model) => (
-                  <label
+            {status} · {selectedModelIds.length} × {selectedPromptVersionIds.length} × {testCases} × {repetitions} · {formatInt(total)} req
+          </a>
+          <form
+            className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]"
+            onSubmit={(event) => { event.preventDefault(); void handleStart() }}
+          >
+            <div className="min-w-0 space-y-5">
+              <StepPanel
+                step={1}
+                title="Models"
+                caption="One or more"
+                count={`${selectedModelIds.length} of ${options.models.length} runnable`}
+                padded={false}
+                disabled={isStarting}
+                actions={<Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="max-md:min-h-11"
+                  disabled={!options.models.length}
+                  onClick={() => change(() => setSelectedModelIds(options.models.map((model) => model.id)))}
+                >Select all</Button>}
+              >
+                {options.models.length === 0 && empty("No runnable models. Add one in Models.", "/models", "Add a model")}
+                <OptionList embedded>
+                  {models.map((model) => <SelectableRow
                     key={model.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors has-[:checked]:border-primary has-[:checked]:bg-muted"
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-1 size-4 accent-primary"
-                      checked={selectedModelIds.includes(model.id)}
-                      onChange={() =>
-                        toggleSelection(
-                          model.id,
-                          selectedModelIds,
-                          setSelectedModelIds,
-                        )
-                      }
-                    />
-                    <span>
-                      <span className="block font-medium">{model.name}</span>
-                      {model.pricing_stale && <span className="block text-xs text-warning">OpenRouter price is stale; this run will use the last saved estimate.</span>}
-                      {model.pricing_unavailable && <span className="block text-xs text-warning">OpenRouter price is unavailable; this run will have no cost estimate unless pricing refresh succeeds.</span>}
-                      <span className="mt-1 block font-mono text-xs text-muted-foreground">
-                        {model.model_name}
-                      </span>
-                      <span className="mt-1 block text-xs uppercase tracking-wide text-muted-foreground">
-                        {model.provider}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </SelectionCard>
-
-          <SelectionCard
-            step="2"
-            title="Prompt versions"
-            description="Select every immutable prompt version to compare."
-          >
-            {promptGroups.length === 0 ? (
-              <EmptySelection>
-                No prompt versions exist yet.{" "}
-                <LinkText to="/prompts">Create a prompt</LinkText> first.
-              </EmptySelection>
-            ) : (
-              <div className="space-y-4">
-                {promptGroups.map((versions) => (
-                  <fieldset key={versions[0].prompt_id} className="space-y-2">
-                    <legend className="font-medium">{versions[0].prompt_name}</legend>
-                    {versions.map((version) => (
-                      <label
-                        key={version.id}
-                        className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors has-[:checked]:border-primary has-[:checked]:bg-muted"
-                      >
-                        <input
-                          type="checkbox"
-                          className="mt-1 size-4 accent-primary"
-                          checked={selectedPromptVersionIds.includes(version.id)}
-                          onChange={() =>
-                            toggleSelection(
-                              version.id,
-                              selectedPromptVersionIds,
-                              setSelectedPromptVersionIds,
-                            )
-                          }
-                        />
-                        <span className="min-w-0">
-                          <span className="block font-medium">
-                            Version {version.version_number}
-                          </span>
-                          <span className="mt-1 block break-words text-sm text-muted-foreground">
-                            {version.content_preview}
-                            {version.system_prompt_preview && (
-                              <span className="mt-1 block text-xs text-muted-foreground">
-                                System: {version.system_prompt_preview}
-                              </span>
-                            )}
-                          </span>
+                    name="models"
+                    value={model.id}
+                    checked={selectedModelIds.includes(model.id)}
+                    disabled={model.disabled}
+                    label={model.name}
+                    description={
+                      <>
+                        <span className="block font-mono [overflow-wrap:anywhere]">
+                          {model.model_name} · {model.provider}
                         </span>
-                      </label>
-                    ))}
+                        {model.reason && <span className="block [overflow-wrap:anywhere]">{model.reason}</span>}
+                      </>
+                    }
+                    hint={
+                      <span className={model.price === "priced" ? "text-success" : "text-warning"}>
+                        {model.price === "priced" ? "✓" : "⚠"} {model.price}
+                      </span>
+                    }
+                    onCheckedChange={() => toggle(model.id, selectedModelIds, setSelectedModelIds)}
+                  />)}
+                </OptionList>
+              </StepPanel>
+              <StepPanel
+                step={2}
+                title="Prompt versions"
+                caption="Versions are immutable"
+                count={`${selectedPromptVersionIds.length} of ${options.prompt_versions.length}`}
+                padded={false}
+                disabled={isStarting}
+              >
+                {!promptGroups.length ? empty("No prompt versions exist yet.", "/prompts", "Create a prompt") : promptGroups.map((versions) => (
+                  <fieldset key={versions[0].prompt_id} className="min-w-0">
+                    <legend
+                      className="w-full bg-chrome px-4 py-2 text-overline uppercase text-fg-muted [overflow-wrap:anywhere]"
+                    >{versions[0].prompt_name}</legend>
+                    <OptionList embedded>{versions.map((version) => <SelectableRow
+                      key={version.id}
+                      name="prompt_versions"
+                      value={version.id}
+                      checked={selectedPromptVersionIds.includes(version.id)}
+                      label={
+                        <>
+                          {version.prompt_name}{" "}
+                          <span className="font-mono text-data text-fg-muted">v{version.version_number}</span>
+                        </>
+                      }
+                      description={
+                        <>
+                          <span className="block truncate font-mono" title={version.content_preview}>
+                            {version.content_preview}
+                          </span>
+                          {version.system_prompt_preview && (
+                            <span className="block truncate font-mono" title={version.system_prompt_preview}>
+                              System: {version.system_prompt_preview}
+                            </span>
+                          )}
+                        </>
+                      }
+                      onCheckedChange={() => toggle(version.id, selectedPromptVersionIds, setSelectedPromptVersionIds)}
+                    />)}</OptionList>
                   </fieldset>
                 ))}
-              </div>
-            )}
-          </SelectionCard>
-
-          <SelectionCard
-            step="3"
-            title="Dataset"
-            description="Choose the reusable test cases for this evaluation."
-          >
-            {options.datasets.length === 0 ? (
-              <EmptySelection>
-                No datasets exist yet.{" "}
-                <LinkText to="/datasets">Create a dataset</LinkText> first.
-              </EmptySelection>
-            ) : (
-              <fieldset className="grid gap-3 sm:grid-cols-2">
-                <legend className="sr-only">Dataset</legend>
-                {options.datasets.map((dataset) => (
-                  <label
-                    key={dataset.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-lg border bg-background p-4 transition-colors has-[:checked]:border-primary has-[:checked]:bg-muted"
-                  >
-                    <input
+              </StepPanel>
+              <StepPanel step={3} title="Dataset" caption="Exactly one" padded={false} disabled={isStarting}>
+                {!options.datasets.length ? empty("No datasets exist yet.", "/datasets", "Create a dataset") : (
+                  <OptionList embedded className="grid grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))]">
+                    {options.datasets.map((dataset) => <SelectableRow
+                      key={dataset.id}
                       type="radio"
                       name="dataset"
-                      className="mt-1 size-4 accent-primary"
-                      checked={selectedDatasetId === dataset.id}
-                      onChange={() =>
-                        selectionChanged(() => setSelectedDatasetId(dataset.id))
+                      value={dataset.id}
+                      label={dataset.name}
+                      description={
+                        <>
+                          <span className="font-mono text-data">{formatInt(dataset.test_case_count)}</span>{" "}
+                          <span className="text-fg-muted">cases</span>
+                        </>
                       }
-                    />
-                    <span>
-                      <span className="block font-medium">{dataset.name}</span>
-                      <span className="mt-1 block text-sm text-muted-foreground">
-                        {dataset.test_case_count}{" "}
-                        {dataset.test_case_count === 1 ? "test case" : "test cases"}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
-            )}
-          </SelectionCard>
-        </div>
-
-        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle>
-                <h2>Configuration</h2>
-              </CardTitle>
-              <CardDescription>
-                Review the expected run size before starting the evaluation.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-2">
-                <label htmlFor="repetitions" className="text-sm font-medium">
-                  Repetitions
-                </label>
-                <Input
-                  id="repetitions"
-                  type="number"
-                  min={1}
-                  max={5}
-                  value={repetitions}
-                  onChange={(event) =>
-                    selectionChanged(() =>
-                      setRepetitions(event.currentTarget.value),
-                    )
-                  }
-                />
-                <p className="text-xs text-muted-foreground">
-                  Repeats every model, prompt, and test-case combination up to five
-                  times.
-                </p>
-              </div>
-
-              <SelectionSummary
-                models={selectedModelIds.length}
-                prompts={selectedPromptVersionIds.length}
-                datasetSelected={Boolean(selectedDatasetId)}
-              />
-
-              {previewError && <ErrorMessage message={previewError} />}
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={!configurationIsComplete || isPreviewing}
-              >
-                {isPreviewing ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="size-4" />
+                      checked={selectedDatasetId === dataset.id}
+                      onCheckedChange={() => change(() => setSelectedDatasetId(dataset.id))}
+                    />)}
+                  </OptionList>
                 )}
-                {isPreviewing ? "Reviewing…" : "Review configuration"}
-              </Button>
-            </CardContent>
-          </Card>
+              </StepPanel>
+              <StepPanel step={4} title="Repetitions" disabled={isStarting}>
+                <SegmentedControl
+                  mode="radio"
+                  label="Repetitions"
+                  name="repetitions"
+                  value={repetitions}
+                  options={[1, 2, 3, 4, 5].map((value) => ({ value: String(value), label: String(value) }))}
+                  onValueChange={(value) => change(() => setRepetitions(value))}
+                />
+                <p className="mt-2 text-caption text-fg-muted">Repeats every model × prompt × case combination.</p>
+              </StepPanel>
+            </div>
+            <aside
+              id="run-summary"
+              className="min-w-0 xl:sticky xl:top-5 xl:self-start"
+              aria-labelledby="run-size-title"
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle id="run-size-title">Run size</CardTitle>
+                  <Badge variant={valid ? "success" : previewError ? "destructive" : "secondary"}>{status}</Badge>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <dl className="space-y-2">
+                    <SummaryValue label="Models" value={formatInt(selectedModelIds.length)} />
+                    <SummaryValue label="Prompt versions" value={`× ${formatInt(selectedPromptVersionIds.length)}`} />
+                    <SummaryValue label="Test cases" value={`× ${formatInt(testCases)}`} />
+                    <SummaryValue label="Repetitions" value={`× ${repetitions}`} />
+                    <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
+                      <dt className="text-caption text-fg-muted">Total requests</dt>
+                      <dd className="font-mono text-metric-lg">{formatInt(total)}</dd>
+                    </div>
+                  </dl>
+                  {metadataError && <Alert variant="warning"><p className="min-w-0 [overflow-wrap:anywhere]">{metadataError}</p></Alert>}
+                  {models.filter((model) => selectedModelIds.includes(model.id) && model.price !== "priced").map((model) => (
+                    <Alert key={model.id} variant="warning">
+                      <p className="min-w-0 [overflow-wrap:anywhere]">
+                        {pricingWarning(model.name, model.price, selectedPromptVersionIds.length * testCases * Number(repetitions))}{" "}
+                        <LinkText to="/models">Add pricing</LinkText>
+                      </p>
+                    </Alert>
+                  ))}
+                  <div role="status" className="text-caption text-fg-muted">{validationMessage}</div>
+                  {previewError && <ErrorState
+                    message={previewError}
+                    onRetry={() => change(() => setPreviewAttempt((value) => value + 1))}
+                  />}
+                  {startError && <ErrorState message={startError} />}
+                  <Button type="submit" size="lg" className="w-full max-md:h-12" disabled={!valid || isStarting}>{isStarting ? "Starting…" : "Start evaluation"}</Button>
+                  <p className="text-caption text-fg-muted">The run stores a snapshot of these models, prompt versions and cases.</p>
+                </CardContent>
+              </Card>
+            </aside>
+          </form>
+        </>
+      )}
+    </PageFrame>
+  )
+}
 
-          {preview && (
-            <PreviewCard
-              preview={preview}
-              isStarting={isStarting}
-              startError={startError}
-              onStart={handleStart}
-            />
-          )}
-        </aside>
-      </form>
+function SummaryValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className="text-fg-muted">{label}</dt>
+      <dd className="font-mono text-data">{value}</dd>
     </div>
   )
 }
-
-function PageHeader() {
-  return (
-    <header className="space-y-3">
-      <Badge variant="secondary">Evaluation setup</Badge>
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-          Configure evaluation
-        </h1>
-        <p className="mt-2 max-w-2xl text-muted-foreground">
-          Combine models, immutable prompt versions, and one reusable dataset.
-        </p>
-      </div>
-    </header>
-  )
-}
-
-function SelectionCard({
-  step,
-  title,
-  description,
-  children,
-}: {
-  step: string
-  title: string
-  description: string
-  children: React.ReactNode
-}) {
-  return (
-    <Card className="shadow-sm">
-      <CardHeader>
-        <div className="flex items-start gap-3">
-          <Badge>{step}</Badge>
-          <div>
-            <CardTitle>
-              <h2>{title}</h2>
-            </CardTitle>
-            <CardDescription className="mt-1">{description}</CardDescription>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
-  )
-}
-
-function EmptySelection({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded-lg border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
-      {children}
-    </p>
-  )
-}
-
 function LinkText({ to, children }: { to: string; children: React.ReactNode }) {
-  return (
-    <Link
-      to={to}
-      className="font-medium text-foreground underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-    >
-      {children}
-    </Link>
-  )
+  return <Link
+    to={to}
+    className="inline-flex min-h-11 items-center text-link underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
+  >{children}</Link>
 }
-
-function SelectionSummary({
-  models,
-  prompts,
-  datasetSelected,
-}: {
-  models: number
-  prompts: number
-  datasetSelected: boolean
-}) {
-  return (
-    <dl className="grid grid-cols-3 gap-2 text-center">
-      <SummaryValue label="Models" value={models} />
-      <SummaryValue label="Prompts" value={prompts} />
-      <SummaryValue label="Dataset" value={datasetSelected ? 1 : 0} />
-    </dl>
-  )
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
 }
-
-function SummaryValue({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg bg-muted p-2">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 font-semibold">{value}</dd>
-    </div>
-  )
-}
-
-function PreviewCard({
-  preview,
-  isStarting,
-  startError,
-  onStart,
-}: {
-  preview: EvaluationPreview
-  isStarting: boolean
-  startError: string | null
-  onStart: () => void
-}) {
-  return (
-    <Card className="border-success-border bg-success-soft shadow-sm" aria-live="polite">
-      <CardHeader>
-        <div className="flex items-center gap-2 text-success">
-          <CheckCircle2 className="size-5" />
-          <CardTitle>
-            <h2>Configuration valid</h2>
-          </CardTitle>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <dl className="space-y-3 text-sm">
-          <PreviewValue
-            label="Model × prompt combinations"
-            value={preview.combination_count}
-          />
-          <PreviewValue label="Test cases" value={preview.test_case_count} />
-          <PreviewValue label="Repetitions" value={preview.repetitions} />
-          <div className="flex items-center justify-between border-t border-success-border pt-3 text-base font-semibold">
-            <dt className="flex items-center gap-2">
-              <Layers3 className="size-4" />
-              Total model requests
-            </dt>
-            <dd>{preview.total_requests}</dd>
-          </div>
-        </dl>
-        {startError && <ErrorMessage message={startError} />}
-        <Button
-          type="button"
-          className="w-full"
-          disabled={isStarting}
-          onClick={onStart}
-        >
-          {isStarting && <LoaderCircle className="size-4 animate-spin" />}
-          {isStarting ? "Starting evaluation…" : "Start evaluation"}
-        </Button>
-      </CardContent>
-    </Card>
-  )
-}
-
-function PreviewValue({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="flex items-center justify-between">
-      <dt>{label}</dt>
-      <dd className="font-medium">{value}</dd>
-    </div>
-  )
-}
-
-function ErrorMessage({ message }: { message: string }) {
-  return (
-    <Alert variant="destructive" className="flex gap-2" role="alert">
-      <AlertCircle className="mt-0.5 size-4 shrink-0" />
-      <p>{message}</p>
-    </Alert>
-  )
+function pricingWarning(name: string, price: string, requests: number) {
+  if (price === "stale price") {
+    return `${name} has a stale price. This run will use the last saved estimate.`
+  }
+  if (price === "no price") {
+    return `${name} has no price. Cost for its ${formatInt(requests)} requests will show as unpriced unless pricing refresh succeeds.`
+  }
+  return `${name} has unknown pricing. A cost estimate may be unavailable.`
 }

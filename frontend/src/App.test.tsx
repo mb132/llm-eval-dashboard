@@ -1,10 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import App from "@/App"
 import type { PromptDetail } from "@/api/prompts"
+import { AppShell } from "@/components/layout/app-shell"
+import { PageFrame } from "@/components/layout/page-frame"
+import { PageHeader } from "@/components/layout/page-header"
 
 const CREATED_AT = "2026-08-22T10:00:00Z"
 const PROMPT_ID = "21c71d8a-1dc7-4efe-9d4d-134c0b72fc2e"
@@ -79,7 +82,7 @@ describe("prompt management", () => {
       screen.getByLabelText(/Description/),
       "Checks instruction handling",
     )
-    fireEvent.change(screen.getByLabelText("User prompt template"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "User template" }), {
       target: { value: "Answer safely.\n{{input}}" },
     })
     await user.click(screen.getByRole("button", { name: "Create prompt" }))
@@ -103,12 +106,14 @@ describe("prompt management", () => {
     await screen.findByText("No prompts yet")
 
     await user.type(screen.getByLabelText("Name"), "Invalid template")
-    fireEvent.change(screen.getByLabelText("User prompt template"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "User template" }), {
       target: { value: "This template has no input." },
     })
     await user.click(screen.getByRole("button", { name: "Create prompt" }))
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Include {{input}} exactly once")
+    expect(screen.getByRole("button", { name: "Create prompt" })).toBeDisabled()
+    expect(screen.getByRole("status")).toHaveTextContent("Add {{input}} where each test case input goes.")
+    expect(screen.getByRole("textbox", { name: "User template" })).toHaveAttribute("aria-invalid", "true")
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -136,7 +141,7 @@ describe("prompt management", () => {
         level: 1,
       }),
     ).toBeInTheDocument()
-    expect(screen.getByRole("status")).toHaveTextContent("Prompt details saved.")
+    expect(await screen.findByText("Prompt details saved.")).toHaveAttribute("role", "status")
     expect(screen.getByText("1 version")).toBeInTheDocument()
   })
 
@@ -170,17 +175,18 @@ describe("prompt management", () => {
     const { container } = renderApp(`/prompts/${PROMPT_ID}`)
     await screen.findByRole("heading", { name: "Security prompt", level: 1 })
 
-    expect(screen.getByLabelText(/System prompt/)).toHaveValue(originalSystem)
-    expect(screen.getByLabelText("User prompt template")).toHaveValue(prompt.versions[0].content)
-    fireEvent.change(screen.getByLabelText(/System prompt/), {
+    expect(screen.getByRole("textbox", { name: /System prompt/ })).toHaveValue(originalSystem)
+    expect(screen.getByRole("textbox", { name: "User template" })).toHaveValue(prompt.versions[0].content)
+    fireEvent.change(screen.getByRole("textbox", { name: /System prompt/ }), {
       target: { value: editedSystem },
     })
-    fireEvent.change(screen.getByLabelText("User prompt template"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "User template" }), {
       target: { value: unsafeContent },
     })
-    await user.click(screen.getByRole("button", { name: "Create version" }))
+    await user.click(screen.getByRole("button", { name: "Create version 2" }))
 
-    expect(await screen.findByText("Version 2")).toBeInTheDocument()
+    expect(await screen.findByText("Version 2 created.")).toHaveAttribute("role", "status")
+    expect(screen.getByRole("tab", { name: "v2 latest" })).toHaveAttribute("aria-selected", "true")
     const versionCall = fetchMock.mock.calls.find(([input, init]) =>
       String(input).endsWith("/versions") && init?.method === "POST",
     )
@@ -188,14 +194,12 @@ describe("prompt management", () => {
       content: unsafeContent,
       system_prompt: editedSystem,
     })
-    expect([...container.querySelectorAll("pre")].map((element) => element.textContent))
-      .toEqual([unsafeContent, editedSystem, prompt.versions[0].content, originalSystem])
-    expect(
-      [...container.querySelectorAll("pre")].some(
-        (element) => element.textContent === unsafeContent,
-      ),
-    ).toBe(true)
+    expect(screen.getByRole("region", { name: "User template" }).textContent).toBe(`User template${unsafeContent}`)
+    expect(screen.getByRole("region", { name: "System prompt" }).textContent).toBe(`System prompt${editedSystem}`)
     expect(container.querySelector("img")).toBeNull()
+    await user.click(screen.getByRole("tab", { name: "v1" }))
+    expect(screen.getByRole("region", { name: "User template" }).textContent).toBe(`User template${prompt.versions[0].content}`)
+    expect(screen.getByRole("region", { name: "System prompt" }).textContent).toBe(`System prompt${originalSystem}`)
   })
 
   it("shows sanitized API errors", async () => {
@@ -205,5 +209,127 @@ describe("prompt management", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Prompt service unavailable.")
     await waitFor(() => expect(screen.queryByText("Loading prompts…")).not.toBeInTheDocument())
+  })
+})
+
+describe("app shell", () => {
+  function renderShell(path = "/", content = <p>Page content</p>) {
+    return render(<MemoryRouter initialEntries={[path]}><AppShell>{content}</AppShell></MemoryRouter>)
+  }
+
+  it("groups navigation and marks Runs current for a detail route", () => {
+    renderShell("/evaluations/12345678-abcd?filter=failed")
+    const navigation = screen.getByRole("navigation", { name: "Primary" })
+    expect(within(navigation).getByText("Analyze")).toBeInTheDocument()
+    expect(within(navigation).getByText("Library")).toBeInTheDocument()
+    expect(within(navigation).getByRole("link", { name: "Runs" })).toHaveAttribute("aria-current", "page")
+    expect(within(navigation).getByRole("link", { name: "Dashboard" })).not.toHaveAttribute("aria-current")
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByText("12345678")).toHaveAttribute("title", "12345678-abcd")
+    expect(screen.getByRole("link", { name: "New" })).toHaveAttribute("href", "/evaluations/new")
+    expect(screen.getAllByRole("main")).toHaveLength(1)
+  })
+
+  it("marks New evaluation current without marking Runs current", () => {
+    renderShell("/evaluations/new?dataset=dataset-id")
+    const navigation = screen.getByRole("navigation", { name: "Primary" })
+    expect(within(navigation).getByRole("link", { name: "Runs" })).not.toHaveAttribute("aria-current")
+    expect(within(navigation).getByRole("link", { name: "New evaluation" })).toHaveAttribute("aria-current", "page")
+  })
+
+  it("allows pages to supply chrome without another main or top bar", () => {
+    renderShell("/prompts/prompt-id", <PageFrame breadcrumbs={[{ label: "Prompts", to: "/prompts" }, { label: "Named prompt" }]} actions={<button>Evaluate this prompt</button>} mobileTitle="Prompts" mobileBack={{ label: "Prompts", to: "/prompts" }}>
+      <PageHeader title="Named prompt" description="Immutable versions" metadata="Latest v2" />
+    </PageFrame>)
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByText("Named prompt")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Evaluate this prompt" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Named prompt")
+    expect(screen.getAllByRole("main")).toHaveLength(1)
+    expect(screen.getAllByRole("navigation", { name: "Breadcrumb" })).toHaveLength(1)
+  })
+
+  it("shares and persists the theme across desktop and mobile controls", async () => {
+    const user = userEvent.setup()
+    renderShell()
+    await user.click(screen.getByRole("button", { name: "Dark" }))
+    await user.click(screen.getByRole("button", { name: "Switch to light theme" }))
+    expect(document.documentElement).toHaveAttribute("data-theme", "light")
+    expect(localStorage.getItem("llm-eval-theme")).toBe("light")
+    expect(screen.getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "true")
+    await user.click(screen.getByRole("button", { name: "Switch to dark theme" }))
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark")
+  })
+
+  it("traps drawer focus, locks scrolling, and restores focus on Escape", async () => {
+    const user = userEvent.setup()
+    renderShell()
+    const trigger = screen.getByRole("button", { name: "Open navigation" })
+    const previousOverflow = document.body.style.overflow
+    await user.click(trigger)
+    const drawer = screen.getByRole("dialog", { name: "Navigation" })
+    const close = within(drawer).getByRole("button", { name: "Close navigation" })
+    const last = within(drawer).getByRole("link", { name: "New evaluation" })
+    expect(trigger).toHaveAttribute("aria-expanded", "true")
+    expect(drawer).toHaveAttribute("aria-modal", "true")
+    expect(close).toHaveFocus()
+    expect(document.body.style.overflow).toBe("hidden")
+    await user.tab({ shift: true })
+    expect(last).toHaveFocus()
+    await user.tab()
+    expect(close).toHaveFocus()
+    trigger.focus()
+    expect(close).toHaveFocus()
+    await user.keyboard("{Escape}")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    expect(trigger).toHaveAttribute("aria-expanded", "false")
+    expect(document.body.style.overflow).toBe(previousOverflow)
+  })
+
+  it("closes on backdrop and navigation, preserving destination links", async () => {
+    const user = userEvent.setup()
+    renderShell()
+    const trigger = screen.getByRole("button", { name: "Open navigation" })
+    await user.click(trigger)
+    fireEvent.mouseDown(screen.getByRole("dialog").parentElement!)
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    await user.click(trigger)
+    await user.click(within(screen.getByRole("dialog")).getByRole("link", { name: "Prompts" }))
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    expect(within(screen.getByRole("navigation", { name: "Primary" })).getByRole("link", { name: "Prompts" })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("link", { name: "New" })).toHaveAttribute("href", "/prompts#create-prompt")
+  })
+
+  it("offers the correct mobile New destination only on supported list pages", () => {
+    const { unmount } = renderShell("/datasets")
+    expect(screen.getByRole("link", { name: "New" })).toHaveAttribute("href", "/datasets#create-dataset")
+    unmount()
+    renderShell("/playground")
+    expect(screen.queryByRole("link", { name: "New" })).not.toBeInTheDocument()
+  })
+
+  it("retains fallback mobile actions when PageFrame leaves them unspecified", () => {
+    renderShell("/prompts", <PageFrame breadcrumbs={[{ label: "Prompts" }]}><PageHeader title="Prompts" /></PageFrame>)
+    expect(screen.getByRole("link", { name: "New" })).toHaveAttribute("href", "/prompts#create-prompt")
+  })
+
+  it.each(["prompt", "dataset"])("scrolls New to the %s form and focuses its first field while retaining query parameters", async (kind) => {
+    const user = userEvent.setup()
+    const path = kind === "prompt" ? "/prompts" : "/datasets"
+    renderShell(`${path}?keep=1`, <PageFrame breadcrumbs={[{ label: kind }]}>
+      <PageHeader title={kind} />
+      <form id={`create-${kind}`} data-testid="create-form"><input aria-label="Name" /><textarea aria-label="Content" /></form>
+    </PageFrame>)
+    const form = screen.getByTestId("create-form")
+    const scroll = vi.fn()
+    form.scrollIntoView = scroll
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "Unsaved name")
+    const action = screen.getByRole("link", { name: "New" })
+    expect(action).toHaveAttribute("href", `${path}?keep=1#create-${kind}`)
+    await user.click(action)
+    expect(scroll).toHaveBeenCalledWith({ block: "start" })
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveFocus()
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Unsaved name")
+    expect(screen.getByRole("link", { name: "New" })).toHaveAttribute("href", `${path}?keep=1#create-${kind}`)
   })
 })

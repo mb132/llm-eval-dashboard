@@ -12,15 +12,33 @@ latency, token usage, estimated cost, and security checks.
 - Review run history, individual requests, model and prompt comparisons, and
   normalized exports.
 - Try one-off prompts in the playground without saving them.
+- Use a responsive workspace with Dark/Light themes, keyboard navigation, and
+  locally bundled interface and data fonts.
+
+## Workspace
+
+The sidebar groups **Dashboard**, **Runs**, and **Playground** under Analyze,
+and **Prompts**, **Datasets**, and **Models** under Library. On mobile, open the
+navigation drawer from the menu button. Choose Dark or Light in the sidebar or
+mobile top bar; the choice is remembered in your browser.
+
+New evaluation validates a complete selection automatically and shows the
+request total before **Start evaluation** becomes available. Dataset imports
+also preview automatically as the file, destination, mapping, or rules change;
+**Import N rows** is available only for the current valid preview. Prompt forms
+validate templates as you type, and case/model removals use inline confirmation.
 
 ## Quick start
 
 Requirements: Python 3.13+, Node.js, `uv`, and [just](https://just.systems/).
-For local Ollama, install Ollama and make the default model available:
+For local Ollama, install Ollama and pull a model:
 
 ```bash
 ollama run gemma4:e4b
 ```
+
+Ollama is configured in the web UI (Models page), not through environment
+variables. From Docker, use `http://host.docker.internal:11434` as the base URL.
 
 Create the local environment file and generate a master key for encrypting
 provider credentials:
@@ -58,3 +76,8 @@ credentials cannot be recovered.
 
 The repository includes [example datasets](examples/imports/) that can be
 imported from the Datasets page.
+
+The frontend redesign [acceptance report](docs/redesign/ACCEPTANCE-REPORT.md)
+records screen changes, verification, data limitations, and browser QA evidence.
+[Proposed wiki updates](docs/redesign/WIKI-PROPOSAL.md) are prepared for manual
+publication.

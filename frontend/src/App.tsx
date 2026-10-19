@@ -1,13 +1,6 @@
-import {
-  Database,
-  FlaskConical,
-  History,
-  LayoutDashboard,
-  MessageSquareText,
-  Settings2,
-  SquareTerminal,
-} from "lucide-react"
-import { NavLink, Route, Routes } from "react-router-dom"
+import { Route, Routes } from "react-router-dom"
+
+import { AppShell } from "@/components/layout/app-shell"
 
 import { DatasetDetailPage } from "@/pages/DatasetDetailPage"
 import { DatasetImportPage } from "@/pages/DatasetImportPage"
@@ -21,57 +14,22 @@ import { PlaygroundPage } from "@/pages/playground-page"
 import { PromptDetailPage } from "@/pages/PromptDetailPage"
 import { PromptsPage } from "@/pages/PromptsPage"
 
-const navigation = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/evaluations/history", label: "History", icon: History, end: true },
-  { to: "/evaluations/new", label: "New evaluation", icon: FlaskConical, end: true },
-  { to: "/prompts", label: "Prompts", icon: MessageSquareText, end: false },
-  { to: "/datasets", label: "Datasets", icon: Database, end: false },
-  { to: "/playground", label: "Playground", icon: SquareTerminal, end: false },
-  { to: "/models", label: "Models", icon: Settings2, end: false },
-]
-
 export default function App() {
   return (
-    <main className="min-h-screen bg-background px-4 py-6 sm:px-6 sm:py-10">
-      <div className="mx-auto w-full max-w-6xl">
-        <nav
-          className="mb-10 flex flex-wrap items-center gap-2 border-b pb-4"
-          aria-label="Primary navigation"
-        >
-          {navigation.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                }`
-              }
-            >
-              <Icon className="size-4" />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-
-        <Routes>
-          <Route index element={<DashboardPage />} />
-          <Route path="evaluations/new" element={<EvaluationPage />} />
-          <Route path="evaluations/history" element={<EvaluationHistoryPage />} />
-          <Route path="evaluations/:evaluationId" element={<EvaluationRunPage />} />
-          <Route path="prompts" element={<PromptsPage />} />
-          <Route path="prompts/:promptId" element={<PromptDetailPage />} />
-          <Route path="datasets" element={<DatasetsPage />} />
-          <Route path="datasets/import" element={<DatasetImportPage />} />
-          <Route path="datasets/:datasetId" element={<DatasetDetailPage />} />
-          <Route path="playground" element={<PlaygroundPage />} />
-          <Route path="models" element={<ModelsPage />} />
-        </Routes>
-      </div>
-    </main>
+    <AppShell>
+      <Routes>
+        <Route index element={<DashboardPage />} />
+        <Route path="evaluations/new" element={<EvaluationPage />} />
+        <Route path="evaluations/history" element={<EvaluationHistoryPage />} />
+        <Route path="evaluations/:evaluationId" element={<EvaluationRunPage />} />
+        <Route path="prompts" element={<PromptsPage />} />
+        <Route path="prompts/:promptId" element={<PromptDetailPage />} />
+        <Route path="datasets" element={<DatasetsPage />} />
+        <Route path="datasets/import" element={<DatasetImportPage />} />
+        <Route path="datasets/:datasetId" element={<DatasetDetailPage />} />
+        <Route path="playground" element={<PlaygroundPage />} />
+        <Route path="models" element={<ModelsPage />} />
+      </Routes>
+    </AppShell>
   )
 }
