@@ -13,6 +13,9 @@ Choose the prefix that describes the main change. For example:
 - `docs: clarify local setup`
 - `chore: update development tooling`
 
+Agents must not be listed as commit co-authors. Do not add `Co-authored-by`
+trailers or other commit authorship credits for AI agents.
+
 ## Wiki documentation
 
 This project has a [GitHub Wiki](https://github.com/mb132/llm-eval-dashboard/wiki)
